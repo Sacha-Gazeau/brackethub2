@@ -144,7 +144,7 @@ public sealed class IgdbService
     {
         foreach (var key in keys)
         {
-            var value = _configuration[key] ?? Environment.GetEnvironmentVariable(key);
+            var value = _configuration[key];
             if (!string.IsNullOrWhiteSpace(value))
             {
                 return value;

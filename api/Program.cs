@@ -3,10 +3,24 @@ using api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
-var supabaseUrl = builder.Configuration["Supabase:Url"]
-    ?? Environment.GetEnvironmentVariable("SUPABASE_URL");
-var supabaseKey = builder.Configuration["Supabase:ServiceKey"]
-    ?? Environment.GetEnvironmentVariable("SUPABASE_SERVICE_KEY");
+
+var resolvedConfiguration = new Dictionary<string, string?>
+{
+    ["Supabase:Url"] = GetConfigValue(builder.Configuration, "Supabase:Url", "SUPABASE_URL"),
+    ["Supabase:ServiceKey"] = GetConfigValue(builder.Configuration, "Supabase:ServiceKey", "SUPABASE_SERVICE_KEY"),
+    ["Supabase:PublishableKey"] = GetConfigValue(builder.Configuration, "Supabase:PublishableKey", "SUPABASE_PUBLISHABLE_KEY"),
+    ["Supabase:JwtSecret"] = GetConfigValue(builder.Configuration, "Supabase:JwtSecret", "SUPABASE_JWT_SECRET"),
+    ["IGDB:ClientId"] = GetConfigValue(builder.Configuration, "IGDB:ClientId", "IGDB_CLIENT_ID"),
+    ["IGDB:ClientSecret"] = GetConfigValue(builder.Configuration, "IGDB:ClientSecret", "IGDB_CLIENT_SECRET"),
+    ["Discord:BotToken"] = GetConfigValue(builder.Configuration, "Discord:BotToken", "DISCORD_BOT_TOKEN"),
+    ["App:PublicBaseUrl"] = GetConfigValue(builder.Configuration, "App:PublicBaseUrl", "APP_PUBLIC_BASE_URL"),
+};
+
+builder.Configuration.AddInMemoryCollection(resolvedConfiguration);
+
+var supabaseUrl = resolvedConfiguration["Supabase:Url"]!;
+var supabaseKey = resolvedConfiguration["Supabase:ServiceKey"]!;
+
 var frontendOrigins = new[]
 {
     "https://brackethub-seven.vercel.app",
@@ -16,11 +30,6 @@ var frontendOrigins = new[]
     "https://127.0.0.1:5173"
     
 };
-
-if (string.IsNullOrEmpty(supabaseUrl) || string.IsNullOrEmpty(supabaseKey))
-{
-    throw new Exception($"Supabase configuration is missing. Environment: {builder.Environment.EnvironmentName}. Check user-secrets for Supabase:Url and Supabase:ServiceKey.");
-}
 
 builder.Services.AddSingleton(new Client(supabaseUrl, supabaseKey));
 builder.Services.AddScoped<ISupabaseAuthService, SupabaseAuthService>();
@@ -50,3 +59,24 @@ app.UseCors("Frontend");
 app.MapControllers();
 
 app.Run();
+
+static string GetConfigValue(
+    IConfiguration configuration,
+    string configKey,
+    string environmentVariableName)
+{
+    var value = configuration[configKey];
+    if (!string.IsNullOrWhiteSpace(value))
+    {
+        return value;
+    }
+
+    value = Environment.GetEnvironmentVariable(environmentVariableName);
+    if (!string.IsNullOrWhiteSpace(value))
+    {
+        return value;
+    }
+
+    throw new InvalidOperationException(
+        $"Missing required configuration value '{configKey}' (fallback environment variable '{environmentVariableName}').");
+}
