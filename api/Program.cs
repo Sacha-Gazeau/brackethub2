@@ -9,10 +9,12 @@ var supabaseKey = builder.Configuration["Supabase:ServiceKey"]
     ?? Environment.GetEnvironmentVariable("SUPABASE_SERVICE_KEY");
 var frontendOrigins = new[]
 {
+    "https://brackethub-seven.vercel.app",
     "http://localhost:5173",
     "https://localhost:5173",
     "http://127.0.0.1:5173",
     "https://127.0.0.1:5173"
+    
 };
 
 if (string.IsNullOrEmpty(supabaseUrl) || string.IsNullOrEmpty(supabaseKey))
