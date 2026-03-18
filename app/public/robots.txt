@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Disallow: /login
+Disallow: /profile
+Disallow: /shop
+Disallow: /tournaments/create
+Disallow: /tournament/*/admin

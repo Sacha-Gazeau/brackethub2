@@ -1,0 +1,21 @@
+@import url("https://fonts.googleapis.com/css2?family=Michroma&display=swap");
+
+@import url("./styles/reset.css");
+@import url("./styles/variables.css");
+@import url("./styles/layout.css");
+
+@import url("./styles/nav.css");
+@import url("./styles/button.css");
+
+@import url("./styles/home.css");
+@import url("./styles/profile.css");
+@import url("./styles/shop.css");
+@import url("./styles/login.css");
+@import url("./styles/notificationTest.css");
+
+@import url("./styles/tournaments.css");
+@import url("./styles/tournamentCard.css");
+@import url("./styles/tournamentDetail.css");
+@import url("./styles/tournamentCreate.css");
+@import url("./styles/tournamentAdmin.css");
+@import url("./styles/tournamentAdminTeams.css");

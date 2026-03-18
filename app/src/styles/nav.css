@@ -1,0 +1,225 @@
+.header {
+  width: 100%;
+  padding: 1rem clamp(1rem, 4vw, 3.75rem);
+  background-color: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.header__width {
+  width: min(100%, 1280px);
+  margin: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  position: relative;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-main);
+  font-size: var(--fs-lg);
+  font-weight: 500;
+  min-width: 0;
+  font-family: var(--font-brand);
+  text-decoration: none;
+  & img {
+    width: 5rem;
+    height: auto;
+    object-fit: contain;
+    flex: 0 0 auto;
+  }
+}
+
+.logo__wordmark {
+  display: inline-block;
+  font-size: clamp(1.05rem, 1rem + 0.8vw, var(--fs-lg));
+
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.nav a {
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  font-size: var(--fs-md);
+  transition: var(--transition-fast);
+}
+
+.nav a:hover {
+  color: var(--color-text-main);
+}
+
+.login-btn {
+  margin-left: var(--spacing-xs);
+}
+
+.nav-toggle {
+  display: none;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-main);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.nav-toggle span {
+  width: 20px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition:
+    transform var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.nav-toggle--open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.nav-toggle--open span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-toggle--open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+body {
+  background-color: var(--color-bg-main);
+  color: var(--color-text-main);
+}
+main {
+  min-height: calc(100vh - 14rem);
+  width: min(100%, 1280px);
+  margin: auto;
+  padding: 1rem clamp(1rem, 4vw, 3.75rem);
+}
+
+.footer {
+  background-color: var(--color-bg-secondary);
+  padding: clamp(2rem, 5vw, 3.75rem) clamp(1rem, 5vw, 5rem) 1.8rem;
+  color: var(--color-text-secondary);
+}
+
+.footer__width {
+  width: min(100%, 1280px);
+  margin: auto;
+}
+
+.footer-container {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-xl);
+}
+
+.footer-column h4 {
+  color: var(--color-text-main);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--fs-md);
+}
+
+.footer-column p,
+.footer-column a {
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+  display: block;
+  transition: var(--transition-fast);
+}
+
+.footer-column a:hover {
+  color: var(--color-text-main);
+}
+
+.footer-divider {
+  margin: var(--spacing-lg) 0 var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.footer-bottom {
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--color-text-main);
+}
+
+@media (max-width: 1100px) {
+  .nav {
+    gap: var(--spacing-md);
+  }
+}
+
+@media (max-width: 900px) {
+  .logo img {
+    width: 3.5rem;
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .nav {
+    position: absolute;
+    top: calc(100% + 0.75rem);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: rgba(35, 39, 90, 0.98);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  }
+
+  .nav--open {
+    display: flex;
+  }
+
+  .nav a,
+  .nav button {
+    width: 100%;
+  }
+
+  .login-btn {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+  }
+
+  .logo {
+    gap: 0.65rem;
+  }
+
+  main {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+}

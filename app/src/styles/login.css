@@ -1,0 +1,122 @@
+
+
+
+.login-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-xl) var(--spacing-md);
+  background: var(--color-bg-main);
+  color: var(--color-text-main);
+  --login-panel-radius: 4px;
+}
+
+/* Brand */
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.login-brand__mark {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--login-panel-radius);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  color: var(--color-primary);
+}
+
+.login-brand__name {
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+
+/* Card */
+.login-card {
+  width: 380px;
+  max-width: 95vw;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--login-panel-radius);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.login-card__title {
+  font-size: var(--fs-xl);
+  text-align: center;
+}
+
+.login-card__subtitle {
+  font-size: var(--fs-sm);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* Circle icon */
+.login-card__icon {
+  width: 7rem;
+  height: 7rem;
+  object-fit: contain;
+  margin: auto;
+}
+
+/* Discord button */
+.login-card__button {
+  width: 100%;
+}
+
+.login-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: var(--color-text-main);
+}
+
+.login-card__divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--spacing-sm) 0;
+}
+
+.login-card__small {
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.login-card__small--muted {
+  color: var(--color-text-muted);
+}
+
+.login-note {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+  max-width: 500px;
+}
+
+.login-back {
+  min-width: 180px;
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    width: 100%;
+    padding: var(--spacing-md);
+  }
+
+  .login-back {
+    width: 100%;
+    min-width: 0;
+  }
+}

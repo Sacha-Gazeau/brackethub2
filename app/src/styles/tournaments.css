@@ -1,0 +1,104 @@
+/* ===== TOURNAMENTS PAGE (Hero + Filters) ===== */
+.tournaments-page {
+  width: 100%;
+}
+
+.tournaments-hero__inner,
+.tournaments-filters__inner,
+.tournaments-list__inner {
+  margin: 0 auto;
+}
+
+.tournaments-filters__inner {
+  padding: var(--spacing-lg) 0;
+}
+
+.filters-card {
+  background: var(--color-border-secondary);
+}
+.filters-card__top {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.filters-card__icon {
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+  opacity: 0.9;
+}
+.filters-card__title {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+
+.filters-form {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-md);
+  align-items: end;
+}
+.filters-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.filters-label {
+  font-size: var(--fs-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.filters-select,
+.filters-input {
+  width: 100%;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  padding: 10px 12px;
+  color: var(--color-text-main);
+  font-size: var(--fs-sm);
+  transition: var(--transition-fast);
+}
+.filters-select:focus,
+.filters-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.filters-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--spacing-xs);
+}
+
+.tournaments-found {
+  margin-top: var(--spacing-md);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  display: flex;
+  gap: 6px;
+}
+.tournaments-found__count {
+  color: var(--color-text-secondary);
+}
+
+.tournaments-list__inner {
+  padding: var(--spacing-lg) 0 var(--spacing-xl);
+}
+
+@media (max-width: 1100px) {
+  .tournaments-hero__inner,
+  .tournaments-filters__inner,
+  .tournaments-list__inner {
+    width: 90%;
+  }
+
+  .filters-form {
+    grid-template-columns: 1fr;
+  }
+}

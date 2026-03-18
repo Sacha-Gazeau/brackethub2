@@ -1,0 +1,53 @@
+.notification-test-page__inner {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.notification-test-page__message {
+  padding: var(--spacing-md);
+  border: 1px solid rgba(54, 179, 126, 0.35);
+  background: rgba(54, 179, 126, 0.14);
+  color: var(--color-text-main);
+}
+
+.notification-test-page__message--error {
+  border-color: rgba(214, 72, 72, 0.35);
+  background: rgba(214, 72, 72, 0.16);
+}
+
+.notification-test-page__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.notification-test-card {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.notification-test-card h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.notification-test-card p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.notification-test-card .btn {
+  justify-self: start;
+}
+
+@media (max-width: 768px) {
+  .notification-test-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-test-card .btn {
+    width: 100%;
+  }
+}

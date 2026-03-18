@@ -1,0 +1,436 @@
+{
+  "navigation": {
+    "title": "BracketHub",
+    "home": "Home",
+    "tournaments": "Toernooien",
+    "shop": "Shop",
+    "profile": "Profiel",
+    "logout": "Uitloggen"
+  },
+  "footer": {
+    "platform": "BracketHub platform",
+    "navigation": "Navigatie",
+    "legal": "Juridisch",
+    "terms": "Gebruiksvoorwaarden",
+    "privacy": "Privacybeleid",
+    "support": "Support",
+    "contact": "Contact",
+    "faq": "FAQ",
+    "rights": "Alle rechten voorbehouden."
+  },
+  "homePage": {
+    "hero": {
+      "title": "Gaming Toernooien Platform",
+      "subtitle": "Creëer en neem deel aan esport toernooien. Verdien dagelijks coins.",
+      "viewTournaments": "Bekijk toernooien",
+      "loginWithDiscord": "Inloggen via Discord"
+    },
+    "login": {
+      "title": "Welkom terug,",
+      "subtitle": "Klaar voor je volgende match?",
+      "createTournament": "Creëer toernooi",
+      "coinsTitle": "Dagelijkse Coins",
+      "coins": "Coins",
+      "coinsButton": "Haal coins op",
+      "claiming": "Ophalen...",
+      "nextClaim": "Volgende claim in {{countdown}}",
+      "cardTournament": {
+        "title": "Toernooien",
+        "subtitle": "Totaal op BracketHub"
+      },
+      "cardCoins": {
+        "title": "Coins verdiend",
+        "subtitle": "Lifetime totaal"
+      }
+    },
+    "myTournaments": "Mijn Toernooien",
+    "popularTournaments": "Populaire Toernooien",
+    "upcomingTournaments": "Aankomende Toernooien",
+    "viewAll": "Bekijk alle"
+  },
+  "tournamentsPage": {
+    "hero": {
+      "title": "Alle Toernooien",
+      "subtitle": "Vind en neem deel aan gaming toernooien",
+      "create": "Creëer een toernooi"
+    },
+    "loading": "Toernooien laden...",
+    "emptyMine": {
+      "title": "Creëer je eerste toernooi",
+      "description": "Je hebt nog geen eigen toernooien. Start met je eerste bracket en nodig teams uit.",
+      "action": "Creëer toernooi"
+    },
+    "filter": {
+      "title": "Filters",
+      "input1": "spel",
+      "input2": "status",
+      "input3": "datum",
+      "button": "Reset filters"
+    }
+  },
+  "loginPage": {
+    "title": "Inloggen op site",
+    "subtitle": "Log in om toegang te krijken tot toernooien",
+    "button": "Inloggen met Discord",
+    "info": "Geen Discord account?",
+    "warning": "Registratie alleen via Discord",
+    "warning2": "Registratie is alleen mogelijk via Discord geen handmatige registratie (geen email/wachtwoord)",
+    "home": "Terug naar home"
+  },
+  "common": {
+    "logoAlt": "BracketHub logo"
+  },
+  "tournamentCard": {
+    "view": "Bekijken",
+    "bet": "Wedden",
+    "teamsCount": "{{current}}/{{max}} teams"
+  },
+  "rewardCard": {
+    "available": "beschikbaar",
+    "soldOut": "uitverkocht",
+    "priceStock": "🪙 {{price}} coins • Voorraad: {{stock}}",
+    "redeem": "Inwisselen",
+    "loginToRedeem": "Login om in te wisselen"
+  },
+  "tournamentDetail": {
+    "notFound": "Toernooi niet gevonden",
+    "join": "Deelnemen aan toernooi",
+    "loginToJoin": "Login om deel te nemen",
+    "metaTeams": "{{current}}/{{max}} Teams",
+    "status": {
+      "title": "Toernooi Status",
+      "progress": "Plekken over:",
+      "playersPerTeam": "Spelers per team:"
+    },
+    "actions": {
+      "back": "Terug",
+      "admin": "Toernooi beheer"
+    },
+    "messages": {
+      "loading": "Toernooi laden...",
+      "missingSlug": "Toernooi-slug ontbreekt.",
+      "gameLoadFailed": "Spel kon niet geladen worden."
+    },
+    "tabs": {
+      "members": "Deelnemers",
+      "bracket": "Bracket",
+      "rules": "Regels"
+    },
+    "placeholder": "Bracket komt hier...",
+    "bracketTbd": "Nog niet bepaald",
+    "membersPlaceholderCount": "{{current}}/{{max}} teams ingeschreven",
+    "descriptionTitle": "Beschrijving",
+    "descriptionEmpty": "Nog geen beschrijving toegevoegd.",
+    "noPlayers": "Nog geen spelers gekoppeld.",
+    "overview": {
+      "game": "Spel:",
+      "format": "Format:",
+      "finalFormat": "Finale format:",
+      "start": "Startdatum:",
+      "end": "Einddatum:",
+      "startTime": "Startuur:"
+    },
+    "rules": {
+      "minTeams": "Minimum teams:",
+      "maxTeams": "Maximum teams:",
+      "playersPerTeam": "Spelers per team:"
+    },
+    "pagination": {
+      "label": "Bracket paginatie",
+      "page": "Pagina {{page}}",
+      "matches": "Matches {{start}}-{{end}}"
+    }
+  },
+  "teamRequestModal": {
+    "eyebrow": "Deelnemen aan toernooi",
+    "title": "Maak je teamaanvraag aan",
+    "fields": {
+      "teamName": "Teamnaam",
+      "teamNamePlaceholder": "Bijv. BracketHub Elite",
+      "playerNames": "Spelernamen",
+      "playerLabel": "Speler {{index}}",
+      "playerPlaceholder": "Vul de in-game naam van speler {{index}} in"
+    },
+    "actions": {
+      "cancel": "Annuleren",
+      "submit": "Aanvraag verzenden",
+      "submitting": "Verzenden..."
+    },
+    "messages": {
+      "success": "Teamaanvraag succesvol verzonden."
+    },
+    "errors": {
+      "teamNameRequired": "Teamnaam is verplicht.",
+      "playerNamesRequired": "Alle spelernamen zijn verplicht.",
+      "connectionFailed": "Verbinding met de backend mislukt.",
+      "submitFailed": "De teamaanvraag kon nu niet worden verzonden.",
+      "tournamentNotFound": "Toernooi niet gevonden.",
+      "tournamentFull": "Dit toernooi is volzet.",
+      "pendingAlreadyExists": "Je hebt al een lopende aanvraag voor dit toernooi.",
+      "rejectionLimitReached": "Je hebt het maximum aantal geweigerde aanvragen voor dit toernooi bereikt.",
+      "invalidPlayerCount": "Het aantal spelers komt niet overeen met spelers per team."
+    }
+  },
+  "tournamentBetting": {
+    "messages": {
+      "success": "Je weddenschap is succesvol geplaatst."
+    },
+    "actions": {
+      "cancel": "Annuleren",
+      "confirm": "Weddenschap plaatsen",
+      "submitting": "Plaatsen..."
+    },
+    "fields": {
+      "amount": "Aantal coins",
+      "amountPlaceholder": "Bijv. 100"
+    },
+    "modal": {
+      "eyebrow": "Wedden op toernooiwinnaar",
+      "title": "Wed op {{team}}",
+      "balance": "Beschikbaar saldo: {{coins}} coins",
+      "hint": "De inzet wordt onmiddellijk van je saldo afgehaald. Als dit team wint, krijg je 2x je inzet terug."
+    },
+    "card": {
+      "bet": "Wedden",
+      "closed": "Wedden gesloten",
+      "login": "Login om te wedden",
+      "alreadyBet": "Weddenschap bestaat al",
+      "stakePlaced": "{{coins}} coins ingezet"
+    },
+    "errors": {
+      "loginRequired": "Je moet ingelogd zijn om te wedden.",
+      "sessionExpired": "Je sessie is verlopen. Log opnieuw in.",
+      "connectionFailed": "Verbinding met de backend mislukt.",
+      "submitFailed": "De weddenschap kon nu niet geplaatst worden.",
+      "amountRequired": "Voer een bedrag in.",
+      "amountInvalid": "Voer een geldig bedrag groter dan 0 in.",
+      "insufficientCoins": "Je hebt niet genoeg coins.",
+      "tournamentNotFound": "Toernooi niet gevonden.",
+      "bettingClosed": "Wedden is gesloten voor dit toernooi.",
+      "invalidTeam": "Dit team is geen geldige deelnemer voor dit toernooi.",
+      "betAlreadyExists": "Je hebt al een weddenschap op dit toernooi.",
+      "profileNotFound": "Profiel niet gevonden.",
+      "betsTableMissing": "De bets-tabel ontbreekt in de database. Voer eerst de nieuwe migratie uit.",
+      "betsMigrationOutdated": "De bets-tabel komt niet overeen met de nieuwe structuur. Werk de database-migratie bij.",
+      "backendDatabase": "De backend kan de database voor weddenschappen niet bereiken. Controleer de API-configuratie."
+    }
+  },
+  "tournamentAdmin": {
+    "eyebrow": "Toernooi beheer",
+    "subtitle": "Beheer de teamaanvragen voor dit toernooi.",
+    "loading": "Teamaanvragen laden...",
+    "actions": {
+      "backToTournament": "Terug naar toernooi",
+      "addAcceptedTeam": "Geaccepteerd team toevoegen",
+      "creating": "Aanmaken..."
+    },
+    "sections": {
+      "pending": "In afwachting",
+      "accepted": "Geaccepteerd",
+      "rejected": "Geweigerd"
+    },
+    "empty": {
+      "pending": "Geen teams in afwachting.",
+      "accepted": "Geen geaccepteerde teams.",
+      "rejected": "Geen geweigerde teams."
+    },
+    "create": {
+      "title": "Geaccepteerd team toevoegen",
+      "teamName": "Teamnaam",
+      "playerLabel": "Speler {{index}}"
+    },
+    "card": {
+      "accept": "Accepteren",
+      "reject": "Weigeren",
+      "captain": "Kapitein",
+      "players": "Spelers",
+      "noPlayers": "Geen spelers gevonden.",
+      "rejectionReason": "Reden van weigering",
+      "rejectionReasonRequired": "Een reden van weigering is verplicht.",
+      "rejectionPlaceholder": "Leg uit waarom dit team geweigerd wordt.",
+      "confirmReject": "Weigering bevestigen"
+    },
+    "messages": {
+      "missingSlug": "Toernooi-slug ontbreekt.",
+      "loginRequired": "Je moet ingelogd zijn om teamaanvragen te beheren.",
+      "loadFailed": "De teamaanvragen konden niet geladen worden.",
+      "organizerOnly": "Alleen de organisator kan deze teamaanvragen beheren.",
+      "refreshFailed": "De teamaanvragen konden niet vernieuwd worden.",
+      "missingApiUrl": "VITE_API_URL ontbreekt.",
+      "tournamentNotFound": "Toernooi niet gevonden.",
+      "teamNameRequired": "Teamnaam is verplicht.",
+      "captainIdRequired": "Kapitein ID is verplicht.",
+      "playerNamesRequired": "Alle spelernamen zijn verplicht.",
+      "connectionFailed": "Verbinding met de backend mislukt.",
+      "actionFailed": "De actie kon niet uitgevoerd worden.",
+      "actionSuccess": "De teamaanvraag werd bijgewerkt.",
+      "tournamentFull": "Dit toernooi is volzet.",
+      "invalidPlayerCount": "Het aantal spelers komt niet overeen met spelers per team.",
+      "teamAccepted": "Team succesvol geaccepteerd.",
+      "teamRejected": "Team succesvol geweigerd.",
+      "adminTeamCreated": "Geaccepteerd team succesvol toegevoegd."
+    }
+  },
+  "dailyReward": {
+    "messages": {
+      "userNotConnected": "Gebruiker niet verbonden.",
+      "missingApiUrl": "VITE_API_URL ontbreekt in de frontend-configuratie.",
+      "claimFailed": "Dagelijkse claim mislukt (HTTP {{status}}).",
+      "claimed": "Dagelijkse beloning opgehaald.",
+      "unknownNetworkError": "Onbekende netwerkfout.",
+      "apiRequestFailed": "API-aanvraag mislukt: {{message}}"
+    }
+  },
+  "createTournamentPage": {
+    "title": "Creëer een Toernooi",
+    "subtitle": "Organiseer je eigen gaming toernooi",
+    "fields": {
+      "name": "Toernooi naam *",
+      "namePlaceholder": "Bijv: Valorant Summer Cup",
+      "game": "Spel *",
+      "gamePlaceholder": "Zoek een spel op naam",
+      "startDate": "Startdatum *",
+      "endDate": "Einddatum *",
+      "startTime": "Starttijd *",
+      "teamCount": "Aantal teams *",
+      "minTeams": "Minimum teams voor start bracket *",
+      "playersPerTeam": "Spelers per team *",
+      "tournamentType": "Type toernooi *",
+      "format": "Format *",
+      "finalFormat": "Final format *",
+      "description": "Beschrijving / Regels",
+      "descriptionPlaceholder": "Voeg extra informatie en specifieke regels toe..."
+    },
+    "types": {
+      "friendsTitle": "Onder vrienden",
+      "friendsDescription": "Privé toernooi, geen wedden mogelijk",
+      "publicTitle": "Publiek",
+      "publicDescription": "Open voor iedereen",
+      "officialTitle": "Officieel"
+    },
+    "actions": {
+      "cancel": "Annuleren",
+      "submit": "Creëer toernooi",
+      "creating": "Aanmaken..."
+    },
+    "summary": {
+      "eyebrow": "Tournament builder",
+      "title": "Bouw je bracket correct op",
+      "subtitle": "Kies eerst de structuur van je toernooi. Het formulier beperkt daarna automatisch de geldige opties.",
+      "maxTeamsLabel": "Maximum teams",
+      "allowedSizesLabel": "Toegelaten groottes",
+      "privacyLabel": "Beschikbare types",
+      "privacyValue": "Publiek / Onder vrienden"
+    },
+    "sections": {
+      "general": "Basisinformatie",
+      "generalDescription": "Naam en spel van het toernooi.",
+      "schedule": "Planning",
+      "scheduleDescription": "Bepaal wanneer het toernooi start en eindigt.",
+      "structure": "Bracket structuur",
+      "structureDescription": "Alleen machten van 2 zijn toegelaten voor een geldige bracket.",
+      "access": "Toegang",
+      "accessDescription": "Kies of het toernooi publiek is of alleen onder vrienden.",
+      "formatting": "Formaat",
+      "formattingDescription": "Selecteer het standaardformaat en eventueel een finaleformaat.",
+      "details": "Extra details",
+      "detailsDescription": "Beschrijf regels, context of specifieke afspraken."
+    },
+    "requiredNote": "* Verplichte velden",
+    "messages": {
+      "loadOptionsFailed": "Formulieropties konden niet geladen worden.",
+      "fixFields": "Corrigeer de gemarkeerde velden.",
+      "loginRequired": "Je moet ingelogd zijn om een toernooi aan te maken.",
+      "sessionExpired": "Je sessie is verlopen. Log opnieuw in.",
+      "createFailed": "Het toernooi kon niet worden aangemaakt.",
+      "created": "Toernooi succesvol aangemaakt.",
+      "connectionFailed": "Verbinding met de backend mislukt.",
+      "missingApiUrl": "VITE_API_URL ontbreekt.",
+      "loadingOptions": "Opties laden...",
+      "searchingGames": "Spellen zoeken...",
+      "noGamesFound": "Geen spellen gevonden.",
+      "gameSearchFailed": "Spellen konden niet geladen worden."
+    },
+    "errors": {
+      "nameRequired": "Naam is verplicht.",
+      "gameRequired": "Spel is verplicht.",
+      "formatRequired": "Format is verplicht.",
+      "startDateRequired": "Startdatum is verplicht.",
+      "startTimeRequired": "Starttijd is verplicht.",
+      "endDateRequired": "Einddatum is verplicht.",
+      "teamCountRequired": "Aantal teams is verplicht.",
+      "teamCountMin": "Aantal teams moet minstens 2 zijn.",
+      "minTeamsRequired": "Minimum teams is verplicht.",
+      "minTeamsMin": "Minimum teams moet minstens 2 zijn.",
+      "minTeamsGreaterThanMax": "Minimum teams mag niet groter zijn dan het aantal teams.",
+      "playersPerTeamRequired": "Spelers per team is verplicht.",
+      "playersPerTeamMin": "Spelers per team moet minstens 1 zijn."
+    }
+  },
+  "shopPage": {
+    "title": "Shop",
+    "subtitle": "Wissel je coins in voor beloningen",
+    "availableCoins": "Beschikbare coins",
+    "getMoreCoins": "Krijg meer coins",
+    "howItWorks": {
+      "title": "Hoe werkt het?",
+      "step1": "Verzamel coins door deel te nemen aan toernooien en dagelijkse beloningen op te halen",
+      "step2": "Kies een beloning in de shop",
+      "step3": "Wissel je coins in voor de beloning",
+      "step4": "Ontvang je code of link via Discord bericht"
+    },
+    "terms": {
+      "title": "Voorwaarden",
+      "item1": "Codes worden binnen 24 tot 48 uur verzonden via Discord bericht",
+      "item2": "Inwisselingen zijn definitief, er zijn geen terugbetalingen",
+      "item3": "Sommige beloningen hebben een beperkte voorraad",
+      "item4": "Je moet een geverifieerd Discord account hebben"
+    }
+  },
+  "profilePage": {
+    "loading": "Laden...",
+    "connected": "Verbonden via Discord",
+    "counts": {
+      "created": "Toernooien gecreëerd",
+      "joined": "Deelnames"
+    },
+    "coinsCard": {
+      "title": "🪙 MIJN COINS"
+    },
+    "sections": {
+      "created": "🏆 Gecreëerde Toernooien",
+      "joined": "📅 Deelgenomen Toernooien",
+      "bets": "📈 Weddenschappen Geschiedenis",
+      "stats": "Statistieken"
+    },
+    "actions": {
+      "viewTournament": "Bekijk toernooi →",
+      "createTournament": "+ Creëer nieuw toernooi",
+      "viewAllTournaments": "Bekijk alle toernooien →",
+      "viewAllBets": "Bekijk alle weddenschappen →"
+    },
+    "empty": {
+      "created": "Nog geen gecreëerde toernooien.",
+      "joined": "Nog geen deelnames gevonden.",
+      "bets": "Nog geen weddenschappen geplaatst."
+    },
+    "joinedTeam": "{{team}} • {{game}}",
+    "participants": "Deelnemers:",
+    "table": {
+      "tournament": "TOERNOOI",
+      "bet": "WEDDENSCHAP",
+      "stake": "INZET",
+      "status": "STATUS",
+      "stakeValue": "{{value}} coins",
+      "resultWon": "Gewonnen +{{payout}}",
+      "resultLost": "Verloren",
+      "resultPending": "In afwachting"
+    },
+    "stats": {
+      "earned": "Totaal verdiende coins",
+      "spent": "Totaal uitgegeven coins",
+      "winRate": "Win ratio weddenschappen",
+      "currentBalance": "Huidig saldo"
+    }
+  }
+}

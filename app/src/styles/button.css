@@ -1,0 +1,108 @@
+.btn,
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-main);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.btn:hover,
+button:hover,
+input[type="button"]:hover,
+input[type="submit"]:hover,
+input[type="reset"]:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.32);
+  transform: translateY(-1px);
+}
+
+.btn:focus-visible,
+button:focus-visible,
+input[type="button"]:focus-visible,
+input[type="submit"]:focus-visible,
+input[type="reset"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.25);
+}
+
+.btn:disabled,
+button:disabled,
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+input[type="reset"]:disabled,
+.btn[aria-disabled="true"] {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
+.btn--primary {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-primary);
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.btn--primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-text-main);
+}
+
+.btn--outline {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-text-main);
+}
+
+.btn--ghost {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: transparent;
+  color: var(--color-text-secondary);
+}
+
+.btn--ghost:hover {
+  color: var(--color-text-main);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: transparent;
+}
+
+.btn--sm {
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: var(--fs-xs);
+}
+
+.btn--full {
+  width: 100%;
+}
+
+.btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
