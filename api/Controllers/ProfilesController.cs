@@ -175,9 +175,11 @@ public class ProfilesController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(discordId) || !ulong.TryParse(discordId, out var discordUserId))
         {
+            _logger.LogWarning("Skipping guild membership check because DiscordId is empty or invalid: {DiscordId}", discordId);
             return false;
         }
 
+        _logger.LogInformation("Checking guild membership for Discord user {DiscordUserId}.", discordUserId);
         return await _discordService.IsUserInGuildAsync(discordUserId);
     }
 

@@ -6,16 +6,20 @@ namespace api.Services;
 
 public class DiscordService : IDiscordService
 {
-    private const ulong GuildId = 1483998783149834260;
     private readonly DiscordSocketClient _client;
     private readonly ILogger<DiscordService> _logger;
+    private readonly ulong _guildId;
 
     public DiscordService(
         DiscordSocketClient client,
+        IConfiguration configuration,
         ILogger<DiscordService> logger)
     {
         _client = client;
         _logger = logger;
+        _guildId = ulong.TryParse(configuration["Discord:GuildId"], out var configuredGuildId)
+            ? configuredGuildId
+            : 1483998783149834260;
     }
 
     public async Task<bool> SendPrivateMessageAsync(
@@ -71,25 +75,25 @@ public class DiscordService : IDiscordService
             return false;
         }
 
-        var guild = _client.GetGuild(GuildId);
+        var guild = _client.GetGuild(_guildId);
         if (guild is null)
         {
             _logger.LogError(
                 "Discord guild {GuildId} was not found. Returning false for membership check because the bot is not ready or not invited.",
-                GuildId);
+                _guildId);
             return false;
         }
 
         var guildUser = guild.GetUser(userId);
         if (guildUser is not null)
         {
-            _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+            _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
             return true;
         }
 
         try
         {
-            var restGuildUser = await _client.Rest.GetGuildUserAsync(GuildId, userId, new RequestOptions
+            var restGuildUser = await _client.Rest.GetGuildUserAsync(_guildId, userId, new RequestOptions
             {
                 CancelToken = cancellationToken
             });
@@ -99,14 +103,14 @@ public class DiscordService : IDiscordService
             {
                 _logger.LogInformation(
                     "User found in guild via REST. GuildId: {GuildId}, UserId: {UserId}",
-                    GuildId,
+                    _guildId,
                     userId);
                 return true;
             }
         }
         catch (HttpException ex) when ((int)ex.HttpCode == 404)
         {
-            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
             return false;
         }
         catch (Exception ex) when (ex is HttpException or InvalidOperationException)
@@ -114,7 +118,7 @@ public class DiscordService : IDiscordService
             _logger.LogWarning(
                 ex,
                 "Failed to verify guild membership. Returning false. GuildId: {GuildId}, UserId: {UserId}",
-                GuildId,
+                _guildId,
                 userId);
             return false;
         }
@@ -122,11 +126,11 @@ public class DiscordService : IDiscordService
         var isInGuild = guildUser is not null;
         if (isInGuild)
         {
-            _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+            _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
         }
         else
         {
-            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
         }
 
         return isInGuild;
