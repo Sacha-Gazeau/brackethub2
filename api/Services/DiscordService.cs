@@ -75,10 +75,9 @@ public class DiscordService : IDiscordService
         if (guild is null)
         {
             _logger.LogError(
-                "Discord guild {GuildId} was not found. Ensure the bot is connected and invited to the server.",
+                "Discord guild {GuildId} was not found. Returning false for membership check because the bot is not ready or not invited.",
                 GuildId);
-            throw new InvalidOperationException(
-                $"Discord guild {GuildId} was not found. Ensure the bot is connected and invited to the server.");
+            return false;
         }
 
         var guildUser = guild.GetUser(userId);
@@ -114,10 +113,10 @@ public class DiscordService : IDiscordService
         {
             _logger.LogWarning(
                 ex,
-                "Failed to verify guild membership. GuildId: {GuildId}, UserId: {UserId}",
+                "Failed to verify guild membership. Returning false. GuildId: {GuildId}, UserId: {UserId}",
                 GuildId,
                 userId);
-            throw;
+            return false;
         }
 
         var isInGuild = guildUser is not null;
