@@ -40,7 +40,7 @@ public class ProfilesController : ControllerBase
 
         var profile = existingResponse.Models.FirstOrDefault();
         var isNewProfile = profile == null;
-        var existingDiscordId = profile?.DiscordId;
+        var wasInServer = profile?.IsInServer == true;
 
         if (profile == null)
         {
@@ -67,22 +67,7 @@ public class ProfilesController : ControllerBase
             await profile.Update<Profile>();
         }
 
-        var shouldSendWelcome =
-            !string.IsNullOrWhiteSpace(profile.DiscordId) &&
-            (isNewProfile || string.IsNullOrWhiteSpace(existingDiscordId));
-
-        var discordId = profile.DiscordId;
-        if (shouldSendWelcome && !string.IsNullOrWhiteSpace(discordId))
-        {
-            var displayName = profile.Username ?? profile.Email ?? "speler";
-            var sent = await _discordService.SendWelcomeMessageAsync(discordId, displayName);
-            if (!sent)
-            {
-                _logger.LogInformation(
-                    "Welcome DM could not be delivered to Discord user {DiscordId}.",
-                    discordId);
-            }
-        }
+        var shouldSendWelcome = await TrySendWelcomeMessageAsync(profile, wasInServer);
 
         return Ok(new
         {
@@ -110,8 +95,10 @@ public class ProfilesController : ControllerBase
             return NotFound(new { message = "Profile not found." });
         }
 
+        var wasInServer = profile.IsInServer == true;
         profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
         await profile.Update<Profile>();
+        await TrySendWelcomeMessageAsync(profile, wasInServer);
 
         return Ok(new
         {
@@ -146,8 +133,10 @@ public class ProfilesController : ControllerBase
             return NotFound(new { message = "Profile not found." });
         }
 
+        var wasInServer = profile.IsInServer == true;
         profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
         await profile.Update<Profile>(cancellationToken: cancellationToken);
+        await TrySendWelcomeMessageAsync(profile, wasInServer);
 
         return Ok(new
         {
@@ -166,6 +155,25 @@ public class ProfilesController : ControllerBase
         }
 
         return await _discordService.IsUserInGuildAsync(discordUserId);
+    }
+
+    private async Task<bool> TrySendWelcomeMessageAsync(Profile profile, bool wasInServer)
+    {
+        if (wasInServer || profile.IsInServer != true || string.IsNullOrWhiteSpace(profile.DiscordId))
+        {
+            return false;
+        }
+
+        var displayName = profile.Username ?? profile.Email ?? "speler";
+        var sent = await _discordService.SendWelcomeMessageAsync(profile.DiscordId, displayName);
+        if (!sent)
+        {
+            _logger.LogInformation(
+                "Welcome DM could not be delivered to Discord user {DiscordId}.",
+                profile.DiscordId);
+        }
+
+        return true;
     }
 }
 
