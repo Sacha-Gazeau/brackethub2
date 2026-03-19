@@ -31,52 +31,64 @@ public class ProfilesController : ControllerBase
     [HttpPost("sync")]
     public async Task<IActionResult> Sync([FromBody] SyncProfileBody request)
     {
-        var existingResponse = await _supabase
-            .From<Profile>()
-            .Select("*")
-            .Filter("id", PostgrestOperator.Equals, request.Id.ToString())
-            .Limit(1)
-            .Get();
-
-        var profile = existingResponse.Models.FirstOrDefault();
-        var isNewProfile = profile == null;
-        var wasInServer = profile?.IsInServer == true;
-
-        if (profile == null)
+        try
         {
-            profile = new Profile
+            var existingResponse = await _supabase
+                .From<Profile>()
+                .Select("*")
+                .Filter("id", PostgrestOperator.Equals, request.Id.ToString())
+                .Limit(1)
+                .Get();
+
+            var profile = existingResponse.Models.FirstOrDefault();
+            var isNewProfile = profile == null;
+            var wasInServer = profile?.IsInServer == true;
+
+            if (profile == null)
             {
-                Id = request.Id,
-                Coins = 0,
-                LifetimeCoins = 0
-            };
+                profile = new Profile
+                {
+                    Id = request.Id,
+                    Coins = 0,
+                    LifetimeCoins = 0
+                };
+            }
+
+            profile.Email = request.Email;
+            profile.Username = request.Username;
+            profile.Avatar = request.Avatar;
+            profile.DiscordId = request.DiscordId;
+            profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
+
+            if (isNewProfile)
+            {
+                await _supabase.From<Profile>().Insert(profile, new PostgrestQueryOptions());
+            }
+            else
+            {
+                await profile.Update<Profile>();
+            }
+
+            var shouldSendWelcome = await TrySendWelcomeMessageAsync(profile, wasInServer);
+
+            return Ok(new
+            {
+                message = "Profile synced successfully.",
+                created = isNewProfile,
+                discord_id = profile.DiscordId,
+                is_in_server = profile.IsInServer,
+                welcome_attempted = shouldSendWelcome
+            });
         }
-
-        profile.Email = request.Email;
-        profile.Username = request.Username;
-        profile.Avatar = request.Avatar;
-        profile.DiscordId = request.DiscordId;
-        profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
-
-        if (isNewProfile)
+        catch (Exception ex)
         {
-            await _supabase.From<Profile>().Insert(profile, new PostgrestQueryOptions());
+            _logger.LogError(ex, "Profile sync failed for user {UserId}.", request.Id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Profile sync failed.",
+                detail = ex.Message
+            });
         }
-        else
-        {
-            await profile.Update<Profile>();
-        }
-
-        var shouldSendWelcome = await TrySendWelcomeMessageAsync(profile, wasInServer);
-
-        return Ok(new
-        {
-            message = "Profile synced successfully.",
-            created = isNewProfile,
-            discord_id = profile.DiscordId,
-            is_in_server = profile.IsInServer,
-            welcome_attempted = shouldSendWelcome
-        });
     }
 
     [HttpPost("{id:guid}/sync-guild-status")]
@@ -112,39 +124,51 @@ public class ProfilesController : ControllerBase
     [HttpPost("me/recheck-server")]
     public async Task<IActionResult> RecheckCurrentUserServerStatus(CancellationToken cancellationToken)
     {
-        var (isAuthenticated, userId, authErrorMessage) =
-            await _supabaseAuthService.TryGetAuthenticatedUserIdAsync(Request, cancellationToken);
-
-        if (!isAuthenticated || string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+        try
         {
-            return Unauthorized(new { message = authErrorMessage });
+            var (isAuthenticated, userId, authErrorMessage) =
+                await _supabaseAuthService.TryGetAuthenticatedUserIdAsync(Request, cancellationToken);
+
+            if (!isAuthenticated || string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+            {
+                return Unauthorized(new { message = authErrorMessage });
+            }
+
+            var response = await _supabase
+                .From<Profile>()
+                .Select("*")
+                .Filter("id", PostgrestOperator.Equals, parsedUserId.ToString())
+                .Limit(1)
+                .Get(cancellationToken);
+
+            var profile = response.Models.FirstOrDefault();
+            if (profile is null)
+            {
+                return NotFound(new { message = "Profile not found." });
+            }
+
+            var wasInServer = profile.IsInServer == true;
+            profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
+            await profile.Update<Profile>(cancellationToken: cancellationToken);
+            await TrySendWelcomeMessageAsync(profile, wasInServer);
+
+            return Ok(new
+            {
+                message = "Guild membership rechecked successfully.",
+                profile_id = profile.Id,
+                discord_id = profile.DiscordId,
+                is_in_server = profile.IsInServer
+            });
         }
-
-        var response = await _supabase
-            .From<Profile>()
-            .Select("*")
-            .Filter("id", PostgrestOperator.Equals, parsedUserId.ToString())
-            .Limit(1)
-            .Get(cancellationToken);
-
-        var profile = response.Models.FirstOrDefault();
-        if (profile is null)
+        catch (Exception ex)
         {
-            return NotFound(new { message = "Profile not found." });
+            _logger.LogError(ex, "Guild membership recheck failed.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Guild membership recheck failed.",
+                detail = ex.Message
+            });
         }
-
-        var wasInServer = profile.IsInServer == true;
-        profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
-        await profile.Update<Profile>(cancellationToken: cancellationToken);
-        await TrySendWelcomeMessageAsync(profile, wasInServer);
-
-        return Ok(new
-        {
-            message = "Guild membership rechecked successfully.",
-            profile_id = profile.Id,
-            discord_id = profile.DiscordId,
-            is_in_server = profile.IsInServer
-        });
     }
 
     private async Task<bool> ResolveGuildMembershipAsync(string? discordId)
