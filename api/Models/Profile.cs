@@ -24,6 +24,9 @@ public class Profile : BaseModel
     [Column("discord_id")]
     public string? DiscordId { get; set; }
 
+    [Column("is_in_server")]
+    public bool? IsInServer { get; set; }
+
     [Column("coins")]
     public int Coins { get; set; }
 

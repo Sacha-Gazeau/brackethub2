@@ -1,58 +1,136 @@
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
+using Discord;
+using Discord.Net;
+using Discord.WebSocket;
 
 namespace api.Services;
 
 public class DiscordService : IDiscordService
 {
-    private const string DefaultApiBaseUrl = "https://discord.com/api/v10/";
-    private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
+    private const ulong GuildId = 1483998783149834260;
+    private readonly DiscordSocketClient _client;
     private readonly ILogger<DiscordService> _logger;
 
     public DiscordService(
-        HttpClient httpClient,
-        IConfiguration configuration,
+        DiscordSocketClient client,
         ILogger<DiscordService> logger)
     {
-        _httpClient = httpClient;
-        _configuration = configuration;
+        _client = client;
         _logger = logger;
-
-        var apiBaseUrl = _configuration["Discord:ApiBaseUrl"];
-        _httpClient.BaseAddress = new Uri(
-            string.IsNullOrWhiteSpace(apiBaseUrl) ? DefaultApiBaseUrl : apiBaseUrl);
     }
 
-    public async Task<string?> CreateDmChannelAsync(
-        string discordId,
+    public async Task<bool> SendPrivateMessageAsync(
+        ulong userId,
+        string message,
         CancellationToken cancellationToken = default)
     {
-        if (!TryCreateAuthorizedRequest(
-                HttpMethod.Post,
-                "users/@me/channels",
-                out var request,
-                JsonSerializer.Serialize(new { recipient_id = discordId })))
+        if (userId == 0 || string.IsNullOrWhiteSpace(message))
         {
-            return null;
+            return false;
         }
 
-        using (request)
+        try
         {
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            IUser? user = _client.GetUser(userId);
+            if (user is null)
             {
-                await LogDiscordFailureAsync("create DM channel", discordId, response, cancellationToken);
-                return null;
+                _logger.LogWarning("Discord user {UserId} was not found in cache. Falling back to REST.", userId);
+                user = await _client.Rest.GetUserAsync(userId);
             }
 
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var payload = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            return payload.RootElement.TryGetProperty("id", out var idElement)
-                ? idElement.GetString()
-                : null;
+            if (user is null)
+            {
+                _logger.LogWarning("Discord user {UserId} does not exist or is unreachable.", userId);
+                return false;
+            }
+
+            var dmChannel = await user.CreateDMChannelAsync(new RequestOptions
+            {
+                CancelToken = cancellationToken
+            });
+
+            await dmChannel.SendMessageAsync(message, options: new RequestOptions
+            {
+                CancelToken = cancellationToken
+            });
+
+            return true;
         }
+        catch (Exception ex) when (ex is HttpException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Discord DM send failed for Discord user {UserId}.", userId);
+            return false;
+        }
+    }
+
+    public async Task<bool> IsUserInGuildAsync(
+        ulong userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == 0)
+        {
+            return false;
+        }
+
+        var guild = _client.GetGuild(GuildId);
+        if (guild is null)
+        {
+            _logger.LogError(
+                "Discord guild {GuildId} was not found. Ensure the bot is connected and invited to the server.",
+                GuildId);
+            throw new InvalidOperationException(
+                $"Discord guild {GuildId} was not found. Ensure the bot is connected and invited to the server.");
+        }
+
+        var guildUser = guild.GetUser(userId);
+        if (guildUser is not null)
+        {
+            _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+            return true;
+        }
+
+        try
+        {
+            var restGuildUser = await _client.Rest.GetGuildUserAsync(GuildId, userId, new RequestOptions
+            {
+                CancelToken = cancellationToken
+            });
+
+            guildUser = restGuildUser is null ? null : guild.GetUser(restGuildUser.Id);
+            if (guildUser is null && restGuildUser is not null)
+            {
+                _logger.LogInformation(
+                    "User found in guild via REST. GuildId: {GuildId}, UserId: {UserId}",
+                    GuildId,
+                    userId);
+                return true;
+            }
+        }
+        catch (HttpException ex) when ((int)ex.HttpCode == 404)
+        {
+            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+            return false;
+        }
+        catch (Exception ex) when (ex is HttpException or InvalidOperationException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to verify guild membership. GuildId: {GuildId}, UserId: {UserId}",
+                GuildId,
+                userId);
+            throw;
+        }
+
+        var isInGuild = guildUser is not null;
+        if (isInGuild)
+        {
+            _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+        }
+        else
+        {
+            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", GuildId, userId);
+        }
+
+        return isInGuild;
     }
 
     public async Task<bool> SendDmAsync(
@@ -65,40 +143,13 @@ public class DiscordService : IDiscordService
             return false;
         }
 
-        try
+        if (!ulong.TryParse(discordId, out var userId))
         {
-            var dmChannelId = await CreateDmChannelAsync(discordId, cancellationToken);
-            if (string.IsNullOrWhiteSpace(dmChannelId))
-            {
-                return false;
-            }
-
-            if (!TryCreateAuthorizedRequest(
-                    HttpMethod.Post,
-                    $"channels/{dmChannelId}/messages",
-                    out var request,
-                    JsonSerializer.Serialize(new { content = message })))
-            {
-                return false;
-            }
-
-            using (request)
-            {
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    return true;
-                }
-
-                await LogDiscordFailureAsync("send DM", discordId, response, cancellationToken);
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Discord DM send failed for Discord user {DiscordId}.", discordId);
+            _logger.LogWarning("Discord ID '{DiscordId}' is invalid.", discordId);
             return false;
         }
+
+        return await SendPrivateMessageAsync(userId, message, cancellationToken);
     }
 
     public Task<bool> SendWelcomeMessageAsync(
@@ -194,43 +245,4 @@ public class DiscordService : IDiscordService
             rewardCode,
             cancellationToken);
 
-    private bool TryCreateAuthorizedRequest(
-        HttpMethod method,
-        string relativeUrl,
-        out HttpRequestMessage request,
-        string? jsonBody = null)
-    {
-        request = new HttpRequestMessage(method, relativeUrl);
-        var botToken = _configuration["Discord:BotToken"];
-        if (string.IsNullOrWhiteSpace(botToken))
-        {
-            _logger.LogWarning("Discord:BotToken is missing. Discord notifications are disabled.");
-            request.Dispose();
-            request = null!;
-            return false;
-        }
-
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bot", botToken);
-        if (jsonBody != null)
-        {
-            request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-        }
-
-        return true;
-    }
-
-    private async Task LogDiscordFailureAsync(
-        string action,
-        string discordId,
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
-    {
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        _logger.LogWarning(
-            "Discord API failed to {Action} for Discord user {DiscordId}. Status: {StatusCode}. Response: {ResponseBody}",
-            action,
-            discordId,
-            (int)response.StatusCode,
-            body);
-    }
 }

@@ -16,3 +16,4 @@ secrets.json
 
 # Environment files
 .env
+out/

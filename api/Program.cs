@@ -1,3 +1,5 @@
+using Discord;
+using Discord.WebSocket;
 using Supabase;
 using api.Services;
 
@@ -32,12 +34,18 @@ var frontendOrigins = new[]
 };
 
 builder.Services.AddSingleton(new Client(supabaseUrl, supabaseKey));
+builder.Services.AddSingleton(new DiscordSocketClient(new DiscordSocketConfig
+{
+    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.DirectMessages,
+    LogGatewayIntentWarnings = false
+}));
 builder.Services.AddScoped<ISupabaseAuthService, SupabaseAuthService>();
 builder.Services.AddScoped<DailyRewardService>();
 builder.Services.AddScoped<BettingService>();
 builder.Services.AddScoped<TeamRequestService>();
 builder.Services.AddScoped<TournamentStageService>();
-builder.Services.AddHttpClient<IDiscordService, DiscordService>();
+builder.Services.AddSingleton<IDiscordService, DiscordService>();
+builder.Services.AddHostedService<DiscordBotHostedService>();
 builder.Services.AddHostedService<TournamentReminderBackgroundService>();
 builder.Services.AddHttpClient<IgdbService>();
 builder.Services.AddCors(options =>
