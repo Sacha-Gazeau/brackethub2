@@ -58,7 +58,16 @@ public class ProfilesController : ControllerBase
             profile.Username = request.Username;
             profile.Avatar = request.Avatar;
             profile.DiscordId = request.DiscordId;
-            profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
+
+            var membershipCheck = await ResolveGuildMembershipAsync(profile.DiscordId);
+            if (membershipCheck.BotReady)
+            {
+                profile.IsInServer = membershipCheck.IsInGuild;
+            }
+            else if (isNewProfile)
+            {
+                profile.IsInServer = null;
+            }
 
             if (isNewProfile)
             {
@@ -73,11 +82,15 @@ public class ProfilesController : ControllerBase
 
             return Ok(new
             {
-                message = "Profile synced successfully.",
+                message = membershipCheck.BotReady
+                    ? "Profile synced successfully."
+                    : "Profile synced, but Discord bot is still starting.",
                 created = isNewProfile,
                 discord_id = profile.DiscordId,
                 is_in_server = profile.IsInServer,
-                welcome_attempted = shouldSendWelcome
+                welcome_attempted = shouldSendWelcome,
+                bot_ready = membershipCheck.BotReady,
+                guild_id = membershipCheck.GuildId
             });
         }
         catch (Exception ex)
@@ -107,8 +120,20 @@ public class ProfilesController : ControllerBase
             return NotFound(new { message = "Profile not found." });
         }
 
+        var membershipCheck = await ResolveGuildMembershipAsync(profile.DiscordId);
+        if (!membershipCheck.BotReady)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "Discord bot is still starting. Try again in 10-20 seconds.",
+                discord_id = profile.DiscordId,
+                bot_ready = false,
+                guild_id = membershipCheck.GuildId
+            });
+        }
+
         var wasInServer = profile.IsInServer == true;
-        profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
+        profile.IsInServer = membershipCheck.IsInGuild;
         await profile.Update<Profile>();
         await TrySendWelcomeMessageAsync(profile, wasInServer);
 
@@ -117,7 +142,9 @@ public class ProfilesController : ControllerBase
             message = "Guild membership synced successfully.",
             profile_id = profile.Id,
             discord_id = profile.DiscordId,
-            is_in_server = profile.IsInServer
+            is_in_server = profile.IsInServer,
+            bot_ready = true,
+            guild_id = membershipCheck.GuildId
         });
     }
 
@@ -147,8 +174,20 @@ public class ProfilesController : ControllerBase
                 return NotFound(new { message = "Profile not found." });
             }
 
+            var membershipCheck = await ResolveGuildMembershipAsync(profile.DiscordId);
+            if (!membershipCheck.BotReady)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    message = "Discord bot is still starting. Try again in 10-20 seconds.",
+                    discord_id = profile.DiscordId,
+                    bot_ready = false,
+                    guild_id = membershipCheck.GuildId
+                });
+            }
+
             var wasInServer = profile.IsInServer == true;
-            profile.IsInServer = await ResolveGuildMembershipAsync(profile.DiscordId);
+            profile.IsInServer = membershipCheck.IsInGuild;
             await profile.Update<Profile>(cancellationToken: cancellationToken);
             await TrySendWelcomeMessageAsync(profile, wasInServer);
 
@@ -157,7 +196,9 @@ public class ProfilesController : ControllerBase
                 message = "Guild membership rechecked successfully.",
                 profile_id = profile.Id,
                 discord_id = profile.DiscordId,
-                is_in_server = profile.IsInServer
+                is_in_server = profile.IsInServer,
+                bot_ready = true,
+                guild_id = membershipCheck.GuildId
             });
         }
         catch (Exception ex)
@@ -171,16 +212,16 @@ public class ProfilesController : ControllerBase
         }
     }
 
-    private async Task<bool> ResolveGuildMembershipAsync(string? discordId)
+    private async Task<DiscordGuildCheckResult> ResolveGuildMembershipAsync(string? discordId)
     {
         if (string.IsNullOrWhiteSpace(discordId) || !ulong.TryParse(discordId, out var discordUserId))
         {
             _logger.LogWarning("Skipping guild membership check because DiscordId is empty or invalid: {DiscordId}", discordId);
-            return false;
+            return new DiscordGuildCheckResult(false, false, 0);
         }
 
         _logger.LogInformation("Checking guild membership for Discord user {DiscordUserId}.", discordUserId);
-        return await _discordService.IsUserInGuildAsync(discordUserId);
+        return await _discordService.CheckGuildMembershipAsync(discordUserId);
     }
 
     private async Task<bool> TrySendWelcomeMessageAsync(Profile profile, bool wasInServer)

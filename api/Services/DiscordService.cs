@@ -70,9 +70,17 @@ public class DiscordService : IDiscordService
         ulong userId,
         CancellationToken cancellationToken = default)
     {
+        var result = await CheckGuildMembershipAsync(userId, cancellationToken);
+        return result.BotReady && result.IsInGuild;
+    }
+
+    public async Task<DiscordGuildCheckResult> CheckGuildMembershipAsync(
+        ulong userId,
+        CancellationToken cancellationToken = default)
+    {
         if (userId == 0)
         {
-            return false;
+            return new DiscordGuildCheckResult(false, false, _guildId);
         }
 
         var guild = _client.GetGuild(_guildId);
@@ -81,14 +89,14 @@ public class DiscordService : IDiscordService
             _logger.LogError(
                 "Discord guild {GuildId} was not found. Returning false for membership check because the bot is not ready or not invited.",
                 _guildId);
-            return false;
+            return new DiscordGuildCheckResult(false, false, _guildId);
         }
 
         var guildUser = guild.GetUser(userId);
         if (guildUser is not null)
         {
             _logger.LogInformation("User found in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
-            return true;
+            return new DiscordGuildCheckResult(true, true, _guildId);
         }
 
         try
@@ -105,13 +113,13 @@ public class DiscordService : IDiscordService
                     "User found in guild via REST. GuildId: {GuildId}, UserId: {UserId}",
                     _guildId,
                     userId);
-                return true;
+                return new DiscordGuildCheckResult(true, true, _guildId);
             }
         }
         catch (HttpException ex) when ((int)ex.HttpCode == 404)
         {
             _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
-            return false;
+            return new DiscordGuildCheckResult(true, false, _guildId);
         }
         catch (Exception ex) when (ex is HttpException or InvalidOperationException)
         {
@@ -120,7 +128,7 @@ public class DiscordService : IDiscordService
                 "Failed to verify guild membership. Returning false. GuildId: {GuildId}, UserId: {UserId}",
                 _guildId,
                 userId);
-            return false;
+            return new DiscordGuildCheckResult(false, false, _guildId);
         }
 
         var isInGuild = guildUser is not null;
@@ -133,7 +141,7 @@ public class DiscordService : IDiscordService
             _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
         }
 
-        return isInGuild;
+        return new DiscordGuildCheckResult(true, isInGuild, _guildId);
     }
 
     public async Task<bool> SendDmAsync(

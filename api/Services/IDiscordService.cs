@@ -1,9 +1,12 @@
 namespace api.Services;
 
+public sealed record DiscordGuildCheckResult(bool BotReady, bool IsInGuild, ulong GuildId);
+
 public interface IDiscordService
 {
     Task<bool> SendPrivateMessageAsync(ulong userId, string message, CancellationToken cancellationToken = default);
     Task<bool> IsUserInGuildAsync(ulong userId, CancellationToken cancellationToken = default);
+    Task<DiscordGuildCheckResult> CheckGuildMembershipAsync(ulong userId, CancellationToken cancellationToken = default);
     Task<bool> SendDmAsync(string discordId, string message, CancellationToken cancellationToken = default);
     Task<bool> SendWelcomeMessageAsync(string discordId, string username, CancellationToken cancellationToken = default);
     Task<bool> SendJoinRequestNotificationAsync(string organizerDiscordId, string teamName, string captainName, string adminTeamsUrl, CancellationToken cancellationToken = default);

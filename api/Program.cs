@@ -15,6 +15,7 @@ var resolvedConfiguration = new Dictionary<string, string?>
     ["IGDB:ClientId"] = GetConfigValue(builder.Configuration, "IGDB:ClientId", "IGDB_CLIENT_ID"),
     ["IGDB:ClientSecret"] = GetConfigValue(builder.Configuration, "IGDB:ClientSecret", "IGDB_CLIENT_SECRET"),
     ["Discord:BotToken"] = GetConfigValue(builder.Configuration, "Discord:BotToken", "DISCORD_BOT_TOKEN"),
+    ["Discord:GuildId"] = GetConfigValue(builder.Configuration, "Discord:GuildId", "DISCORD_GUILD_ID"),
     ["App:PublicBaseUrl"] = GetConfigValue(builder.Configuration, "App:PublicBaseUrl", "APP_PUBLIC_BASE_URL"),
 };
 
