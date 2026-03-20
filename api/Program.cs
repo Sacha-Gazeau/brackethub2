@@ -74,13 +74,13 @@ static string GetConfigValue(
     string configKey,
     string environmentVariableName)
 {
-    var value = configuration[configKey];
+    var value = Environment.GetEnvironmentVariable(environmentVariableName);
     if (!string.IsNullOrWhiteSpace(value))
     {
         return value;
     }
 
-    value = Environment.GetEnvironmentVariable(environmentVariableName);
+    value = configuration[configKey];
     if (!string.IsNullOrWhiteSpace(value))
     {
         return value;
