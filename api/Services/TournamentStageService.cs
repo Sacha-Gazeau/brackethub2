@@ -20,6 +20,7 @@ public enum UpdateMatchResultStatus
     Success,
     TournamentNotFound,
     OrganizerOnly,
+    TournamentNotEditable,
     MatchNotFound,
     MatchNotReady,
     InvalidScore
@@ -199,6 +200,16 @@ public class TournamentStageService
             };
         }
 
+        var tournamentStatus = GetEffectiveTournamentStatus(tournament);
+        if (!string.Equals(tournamentStatus, "live", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(tournamentStatus, "finished", StringComparison.OrdinalIgnoreCase))
+        {
+            return new UpdateMatchResultResult
+            {
+                Status = UpdateMatchResultStatus.TournamentNotEditable
+            };
+        }
+
         var matchResponse = await _supabase
             .From<Match>()
             .Select("*")
@@ -327,6 +338,32 @@ public class TournamentStageService
             .Get();
 
         return response.Models.FirstOrDefault()?.Round ?? 1;
+    }
+
+    private static string GetEffectiveTournamentStatus(TournamentInsert tournament)
+    {
+        if (string.Equals(tournament.Status, "finished", StringComparison.OrdinalIgnoreCase))
+        {
+            return "finished";
+        }
+
+        var now = DateTime.UtcNow;
+        if (tournament.EndDate != default && now > tournament.EndDate.ToUniversalTime())
+        {
+            return "finished";
+        }
+
+        if (string.Equals(tournament.Status, "live", StringComparison.OrdinalIgnoreCase))
+        {
+            return "live";
+        }
+
+        if (tournament.StartDate != default && now >= tournament.StartDate.ToUniversalTime())
+        {
+            return "live";
+        }
+
+        return "aankomend";
     }
 
     private static List<long?>? BuildManualSlots(

@@ -147,6 +147,7 @@ public class TournamentAdminStageController : ControllerBase
         {
             UpdateMatchResultStatus.TournamentNotFound => NotFound(new { message = "Tournament not found." }),
             UpdateMatchResultStatus.OrganizerOnly => StatusCode(403, new { message = "Only the organizer can manage this stage." }),
+            UpdateMatchResultStatus.TournamentNotEditable => BadRequest(new { message = "Match results can only be edited when the tournament is live or finished." }),
             UpdateMatchResultStatus.MatchNotFound => NotFound(new { message = "Match not found." }),
             UpdateMatchResultStatus.MatchNotReady => BadRequest(new { message = "This match is not ready yet." }),
             UpdateMatchResultStatus.InvalidScore => BadRequest(new { message = "Invalid score for this best-of format." }),
