@@ -295,7 +295,7 @@ public class TournamentStageService
         var formatId = tournament.Format;
         var maxRound = await GetMaxRoundAsync(tournament.Id);
 
-        if (tournament.FinalFormat.HasValue && match.Round == maxRound)
+        if (match.Round > 0 && tournament.FinalFormat.HasValue && match.Round == maxRound)
         {
             formatId = tournament.FinalFormat.Value;
         }
@@ -476,6 +476,11 @@ public class TournamentStageService
 
     private async Task PropagateWinnerToNextMatchAsync(TournamentInsert tournament, Match match, long? winnerId)
     {
+        if (match.Round <= 0)
+        {
+            return;
+        }
+
         var nextRound = match.Round + 1;
         var nextMatchNumber = (long)Math.Ceiling(match.MatchNumber / 2d);
 
