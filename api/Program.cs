@@ -12,23 +12,6 @@ var resolvedConfiguration = new Dictionary<string, string?>
     ["Supabase:ServiceKey"] = GetConfigValue(builder.Configuration, "Supabase:ServiceKey", "SUPABASE_SERVICE_KEY"),
     ["Supabase:PublishableKey"] = GetConfigValue(builder.Configuration, "Supabase:PublishableKey", "SUPABASE_PUBLISHABLE_KEY"),
     ["Supabase:JwtSecret"] = GetConfigValue(builder.Configuration, "Supabase:JwtSecret", "SUPABASE_JWT_SECRET"),
-    ["Supabase:DatabaseConnectionString"] = GetOptionalConfigValues(
-        builder.Configuration,
-        new[]
-        {
-            "Supabase:DatabaseConnectionString",
-            "ConnectionStrings:SupabaseDb",
-            "ConnectionStrings:DefaultConnection"
-        },
-        new[]
-        {
-            "SUPABASE_DB_CONNECTION_STRING",
-            "DATABASE_URL",
-            "POSTGRESQLCONNSTR_SupabaseDb",
-            "CUSTOMCONNSTR_SupabaseDb",
-            "POSTGRESQLCONNSTR_DefaultConnection",
-            "CUSTOMCONNSTR_DefaultConnection"
-        }),
     ["IGDB:ClientId"] = GetConfigValue(builder.Configuration, "IGDB:ClientId", "IGDB_CLIENT_ID"),
     ["IGDB:ClientSecret"] = GetConfigValue(builder.Configuration, "IGDB:ClientSecret", "IGDB_CLIENT_SECRET"),
     ["Discord:BotToken"] = GetConfigValue(builder.Configuration, "Discord:BotToken", "DISCORD_BOT_TOKEN"),
@@ -106,30 +89,4 @@ static string GetConfigValue(
 
     throw new InvalidOperationException(
         $"Missing required configuration value '{configKey}' (fallback environment variable '{environmentVariableName}').");
-}
-
-static string? GetOptionalConfigValues(
-    IConfiguration configuration,
-    IEnumerable<string> configKeys,
-    IEnumerable<string> environmentVariableNames)
-{
-    foreach (var environmentVariableName in environmentVariableNames)
-    {
-        var environmentValue = Environment.GetEnvironmentVariable(environmentVariableName);
-        if (!string.IsNullOrWhiteSpace(environmentValue))
-        {
-            return environmentValue;
-        }
-    }
-
-    foreach (var configKey in configKeys)
-    {
-        var configuredValue = configuration[configKey];
-        if (!string.IsNullOrWhiteSpace(configuredValue))
-        {
-            return configuredValue;
-        }
-    }
-
-    return null;
 }

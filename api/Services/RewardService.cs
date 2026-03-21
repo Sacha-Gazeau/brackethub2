@@ -1,8 +1,8 @@
 using api.Models;
-using Npgsql;
 using PostgrestOperator = Supabase.Postgrest.Constants.Operator;
+using PostgrestOrdering = Supabase.Postgrest.Constants.Ordering;
+using PostgrestQueryOptions = Supabase.Postgrest.QueryOptions;
 using SupabaseClient = Supabase.Client;
-using System.Globalization;
 
 namespace api.Services;
 
@@ -50,8 +50,6 @@ public enum RewardPurchaseStatus
     NoCodesAvailable,
     AlreadyPurchased,
     DiscordRoleNotConfigured,
-    DatabaseConfigurationMissing,
-    DatabaseConnectionFailed,
     DiscordDmFailed,
     DiscordRoleAssignmentFailed,
     CompensationFailed
@@ -69,21 +67,20 @@ public sealed class RewardPurchaseResult
 
 public class RewardService
 {
+    private const int MaxRewardCodeReservationAttempts = 5;
+
     private readonly SupabaseClient _supabase;
     private readonly IDiscordService _discordService;
     private readonly ILogger<RewardService> _logger;
-    private readonly string? _databaseConnectionString;
 
     public RewardService(
         SupabaseClient supabase,
         IDiscordService discordService,
-        IConfiguration configuration,
         ILogger<RewardService> logger)
     {
         _supabase = supabase;
         _discordService = discordService;
         _logger = logger;
-        _databaseConnectionString = NormalizeDatabaseConnectionString(configuration["Supabase:DatabaseConnectionString"]);
     }
 
     public async Task<RewardCatalogResult> GetRewardCatalogAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -170,99 +167,51 @@ public class RewardService
         long rewardId,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_databaseConnectionString))
+        var profile = await GetProfileAsync(userId, cancellationToken);
+        if (profile is null)
         {
-            _logger.LogError("Reward purchase requires Supabase:DatabaseConnectionString or SUPABASE_DB_CONNECTION_STRING.");
             return new RewardPurchaseResult
             {
-                Status = RewardPurchaseStatus.DatabaseConfigurationMissing,
-                RewardId = rewardId,
-                FailureDetail = "Configureer SUPABASE_DB_CONNECTION_STRING, DATABASE_URL of een Azure App Service connection string met naam 'SupabaseDb'."
+                Status = RewardPurchaseStatus.ProfileNotFound,
+                RewardId = rewardId
             };
         }
 
-        try
+        var reward = await GetRewardAsync(rewardId, cancellationToken);
+        if (reward is null)
         {
-            await using var connection = new NpgsqlConnection(_databaseConnectionString);
-            await connection.OpenAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-            var profile = await GetProfileForUpdateAsync(connection, transaction, userId, cancellationToken);
-            if (profile is null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new RewardPurchaseResult
-                {
-                    Status = RewardPurchaseStatus.ProfileNotFound,
-                    RewardId = rewardId
-                };
-            }
-
-            var reward = await GetRewardRowAsync(connection, transaction, rewardId, cancellationToken);
-            if (reward is null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new RewardPurchaseResult
-                {
-                    Status = RewardPurchaseStatus.RewardNotFound,
-                    RewardId = rewardId
-                };
-            }
-
-            if (!reward.IsActive)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return BuildFailedPurchaseResult(
-                    RewardPurchaseStatus.RewardInactive,
-                    reward,
-                    profile.Coins);
-            }
-
-            if (string.IsNullOrWhiteSpace(profile.DiscordId))
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return BuildFailedPurchaseResult(
-                    RewardPurchaseStatus.DiscordAccountRequired,
-                    reward,
-                    profile.Coins);
-            }
-
-            if (profile.Coins < reward.PriceCoins)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return BuildFailedPurchaseResult(
-                    RewardPurchaseStatus.InsufficientCoins,
-                    reward,
-                    profile.Coins);
-            }
-
-            return reward.Type switch
-            {
-                RewardTypes.SubscriptionCode => await PurchaseSubscriptionCodeAsync(
-                    connection,
-                    transaction,
-                    profile,
-                    reward,
-                    cancellationToken),
-                RewardTypes.DiscordRole => await PurchaseDiscordRoleAsync(
-                    connection,
-                    transaction,
-                    profile,
-                    reward,
-                    cancellationToken),
-                _ => await RollbackUnsupportedRewardAsync(transaction, reward, profile.Coins, cancellationToken)
-            };
-        }
-        catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException or ArgumentException)
-        {
-            _logger.LogError(ex, "Rewards database connection failed for reward {RewardId}.", rewardId);
             return new RewardPurchaseResult
             {
-                Status = RewardPurchaseStatus.DatabaseConnectionFailed,
-                RewardId = rewardId,
-                FailureDetail = ex.Message
+                Status = RewardPurchaseStatus.RewardNotFound,
+                RewardId = rewardId
             };
         }
+
+        if (!reward.IsActive)
+        {
+            return BuildPurchaseResult(
+                RewardPurchaseStatus.RewardInactive,
+                reward,
+                profile.Coins);
+        }
+
+        if (string.IsNullOrWhiteSpace(profile.DiscordId))
+        {
+            return BuildPurchaseResult(
+                RewardPurchaseStatus.DiscordAccountRequired,
+                reward,
+                profile.Coins);
+        }
+
+        return reward.Type switch
+        {
+            RewardTypes.SubscriptionCode => await PurchaseSubscriptionCodeAsync(profile, reward, cancellationToken),
+            RewardTypes.DiscordRole => await PurchaseDiscordRoleAsync(profile, reward, cancellationToken),
+            _ => BuildPurchaseResult(
+                RewardPurchaseStatus.UnsupportedRewardType,
+                reward,
+                profile.Coins)
+        };
     }
 
     private static int GetTypeSortOrder(Reward reward) => reward.Type switch
@@ -273,220 +222,307 @@ public class RewardService
     };
 
     private async Task<RewardPurchaseResult> PurchaseSubscriptionCodeAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ProfileSnapshot profile,
-        RewardSnapshot reward,
+        Profile profile,
+        Reward reward,
         CancellationToken cancellationToken)
     {
-        var availableCode = await GetAvailableRewardCodeForUpdateAsync(
-            connection,
-            transaction,
-            reward.Id,
-            cancellationToken);
-
-        if (availableCode is null)
+        var reservedCode = await TryReserveRewardCodeAsync(reward.Id, profile.Id, cancellationToken);
+        if (reservedCode is null)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return BuildFailedPurchaseResult(
+            return BuildPurchaseResult(
                 RewardPurchaseStatus.NoCodesAvailable,
                 reward,
                 profile.Coins);
         }
 
-        var remainingCoins = profile.Coins - reward.PriceCoins;
-        await UpdateProfileCoinsAsync(connection, transaction, profile.Id, remainingCoins, cancellationToken);
-        var userRewardId = await InsertUserRewardAsync(connection, transaction, profile.Id, reward.Id, cancellationToken);
-        await MarkRewardCodeAsUsedAsync(connection, transaction, availableCode.Id, profile.Id, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        var dmMessage = BuildSubscriptionCodeMessage(reward.Name, availableCode.CodeValue);
-        var dmResult = await _discordService.SendDirectMessageAsync(profile.DiscordId!, dmMessage, cancellationToken);
-        if (dmResult.Success)
+        var preparation = await TryPreparePurchaseAsync(profile, reward, cancellationToken);
+        if (!preparation.Succeeded)
         {
-            return new RewardPurchaseResult
-            {
-                Status = RewardPurchaseStatus.Success,
-                RewardId = reward.Id,
-                RewardName = reward.Name,
-                RewardType = reward.Type,
-                RemainingCoins = remainingCoins
-            };
+            await ReleaseRewardCodeAsync(reservedCode.Id, cancellationToken);
+            return BuildPurchaseResult(
+                RewardPurchaseStatus.InsufficientCoins,
+                reward,
+                preparation.CurrentCoins);
         }
 
-        _logger.LogWarning(
-            "Reward DM failed after purchase commit. RewardId: {RewardId}, UserId: {UserId}, Detail: {Detail}",
-            reward.Id,
-            profile.Id,
-            dmResult.Message);
-
-        var compensationSucceeded = await RevertSubscriptionPurchaseAsync(
-            profile.Id,
-            reward.PriceCoins,
-            userRewardId,
-            availableCode.Id,
-            cancellationToken);
-
-        return new RewardPurchaseResult
+        long? userRewardId = null;
+        try
         {
-            Status = compensationSucceeded
-                ? RewardPurchaseStatus.DiscordDmFailed
-                : RewardPurchaseStatus.CompensationFailed,
-            RewardId = reward.Id,
-            RewardName = reward.Name,
-            RewardType = reward.Type,
-            RemainingCoins = compensationSucceeded ? profile.Coins : null,
-            FailureDetail = dmResult.Message
-        };
+            userRewardId = await InsertUserRewardAsync(profile.Id, reward.Id, cancellationToken);
+
+            var dmMessage = BuildSubscriptionCodeMessage(reward.Name, reservedCode.CodeValue);
+            var dmResult = await _discordService.SendDirectMessageAsync(profile.DiscordId!, dmMessage, cancellationToken);
+            if (dmResult.Success)
+            {
+                return BuildPurchaseResult(
+                    RewardPurchaseStatus.Success,
+                    reward,
+                    preparation.RemainingCoins);
+            }
+
+            var compensationSucceeded = await TryCompensatePurchaseAsync(
+                profile.Id,
+                preparation.PreviousCoins,
+                userRewardId,
+                reservedCode.Id,
+                reward.Type,
+                cancellationToken);
+
+            return BuildCompensatedFailureResult(
+                compensationSucceeded,
+                RewardPurchaseStatus.DiscordDmFailed,
+                reward,
+                preparation.PreviousCoins,
+                dmResult.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Subscription reward purchase failed. RewardId: {RewardId}, UserId: {UserId}", reward.Id, profile.Id);
+
+            var compensationSucceeded = await TryCompensatePurchaseAsync(
+                profile.Id,
+                preparation.PreviousCoins,
+                userRewardId,
+                reservedCode.Id,
+                reward.Type,
+                cancellationToken);
+
+            return BuildCompensatedFailureResult(
+                compensationSucceeded,
+                RewardPurchaseStatus.CompensationFailed,
+                reward,
+                preparation.PreviousCoins,
+                ex.Message);
+        }
     }
 
     private async Task<RewardPurchaseResult> PurchaseDiscordRoleAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ProfileSnapshot profile,
-        RewardSnapshot reward,
+        Profile profile,
+        Reward reward,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(reward.DiscordRoleId))
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return BuildFailedPurchaseResult(
+            return BuildPurchaseResult(
                 RewardPurchaseStatus.DiscordRoleNotConfigured,
                 reward,
                 profile.Coins);
         }
 
-        var alreadyPurchased = await UserAlreadyOwnsRewardAsync(
-            connection,
-            transaction,
-            profile.Id,
-            reward.Id,
-            cancellationToken);
-
+        var alreadyPurchased = await UserAlreadyOwnsRewardAsync(profile.Id, reward.Id, cancellationToken);
         if (alreadyPurchased)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return BuildFailedPurchaseResult(
+            return BuildPurchaseResult(
                 RewardPurchaseStatus.AlreadyPurchased,
                 reward,
                 profile.Coins);
         }
 
-        var remainingCoins = profile.Coins - reward.PriceCoins;
-        await UpdateProfileCoinsAsync(connection, transaction, profile.Id, remainingCoins, cancellationToken);
-        var userRewardId = await InsertUserRewardAsync(connection, transaction, profile.Id, reward.Id, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        var roleResult = await _discordService.AddRoleToUserAsync(
-            profile.DiscordId!,
-            reward.DiscordRoleId,
-            cancellationToken);
-
-        if (roleResult.Success)
+        var preparation = await TryPreparePurchaseAsync(profile, reward, cancellationToken);
+        if (!preparation.Succeeded)
         {
-            return new RewardPurchaseResult
-            {
-                Status = RewardPurchaseStatus.Success,
-                RewardId = reward.Id,
-                RewardName = reward.Name,
-                RewardType = reward.Type,
-                RemainingCoins = remainingCoins
-            };
+            return BuildPurchaseResult(
+                RewardPurchaseStatus.InsufficientCoins,
+                reward,
+                preparation.CurrentCoins);
         }
 
-        _logger.LogWarning(
-            "Discord role assignment failed after purchase commit. RewardId: {RewardId}, UserId: {UserId}, Detail: {Detail}",
-            reward.Id,
-            profile.Id,
-            roleResult.Message);
-
-        var compensationSucceeded = await RevertDiscordRolePurchaseAsync(
-            profile.Id,
-            reward.PriceCoins,
-            userRewardId,
-            cancellationToken);
-
-        return new RewardPurchaseResult
+        long? userRewardId = null;
+        try
         {
-            Status = compensationSucceeded
-                ? RewardPurchaseStatus.DiscordRoleAssignmentFailed
-                : RewardPurchaseStatus.CompensationFailed,
-            RewardId = reward.Id,
-            RewardName = reward.Name,
-            RewardType = reward.Type,
-            RemainingCoins = compensationSucceeded ? profile.Coins : null,
-            FailureDetail = roleResult.Message
-        };
+            userRewardId = await InsertUserRewardAsync(profile.Id, reward.Id, cancellationToken);
+
+            var roleResult = await _discordService.AddRoleToUserAsync(
+                profile.DiscordId!,
+                reward.DiscordRoleId,
+                cancellationToken);
+
+            if (roleResult.Success)
+            {
+                return BuildPurchaseResult(
+                    RewardPurchaseStatus.Success,
+                    reward,
+                    preparation.RemainingCoins);
+            }
+
+            var compensationSucceeded = await TryCompensatePurchaseAsync(
+                profile.Id,
+                preparation.PreviousCoins,
+                userRewardId,
+                rewardCodeId: null,
+                reward.Type,
+                cancellationToken);
+
+            return BuildCompensatedFailureResult(
+                compensationSucceeded,
+                RewardPurchaseStatus.DiscordRoleAssignmentFailed,
+                reward,
+                preparation.PreviousCoins,
+                roleResult.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Discord role reward purchase failed. RewardId: {RewardId}, UserId: {UserId}", reward.Id, profile.Id);
+
+            var compensationSucceeded = await TryCompensatePurchaseAsync(
+                profile.Id,
+                preparation.PreviousCoins,
+                userRewardId,
+                rewardCodeId: null,
+                reward.Type,
+                cancellationToken);
+
+            return BuildCompensatedFailureResult(
+                compensationSucceeded,
+                RewardPurchaseStatus.CompensationFailed,
+                reward,
+                preparation.PreviousCoins,
+                ex.Message);
+        }
     }
 
-    private async Task<RewardPurchaseResult> RollbackUnsupportedRewardAsync(
-        NpgsqlTransaction transaction,
-        RewardSnapshot reward,
-        int currentCoins,
+    private async Task<(bool Succeeded, int PreviousCoins, int RemainingCoins, int CurrentCoins)> TryPreparePurchaseAsync(
+        Profile profile,
+        Reward reward,
         CancellationToken cancellationToken)
     {
-        await transaction.RollbackAsync(cancellationToken);
-        return BuildFailedPurchaseResult(
-            RewardPurchaseStatus.UnsupportedRewardType,
-            reward,
-            currentCoins);
+        if (profile.Coins < reward.PriceCoins)
+        {
+            return (false, profile.Coins, profile.Coins, profile.Coins);
+        }
+
+        var previousCoins = profile.Coins;
+        var remainingCoins = previousCoins - reward.PriceCoins;
+        var coinsUpdated = await TryUpdateProfileCoinsAsync(profile.Id, previousCoins, remainingCoins, cancellationToken);
+
+        if (coinsUpdated)
+        {
+            return (true, previousCoins, remainingCoins, remainingCoins);
+        }
+
+        var refreshedProfile = await GetProfileAsync(profile.Id, cancellationToken);
+        return (false, previousCoins, remainingCoins, refreshedProfile?.Coins ?? previousCoins);
     }
 
-    private async Task<bool> RevertSubscriptionPurchaseAsync(
+    private async Task<RewardCode?> TryReserveRewardCodeAsync(
+        long rewardId,
         Guid userId,
-        int refundedCoins,
-        long userRewardId,
-        long rewardCodeId,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < MaxRewardCodeReservationAttempts; attempt += 1)
+        {
+            var rewardCodeResponse = await _supabase
+                .From<RewardCode>()
+                .Select("*")
+                .Filter("reward_id", PostgrestOperator.Equals, rewardId.ToString())
+                .Filter("is_used", PostgrestOperator.Equals, "false")
+                .Order("id", PostgrestOrdering.Ascending)
+                .Limit(1)
+                .Get(cancellationToken);
+
+            var rewardCode = rewardCodeResponse.Models.FirstOrDefault();
+            if (rewardCode is null)
+            {
+                return null;
+            }
+
+            var updateResponse = await _supabase
+                .From<RewardCode>()
+                .Filter("id", PostgrestOperator.Equals, rewardCode.Id.ToString())
+                .Filter("is_used", PostgrestOperator.Equals, "false")
+                .Set(x => x.IsUsed, true)
+                .Set(x => x.UsedByUserId!, userId)
+                .Update(cancellationToken: cancellationToken);
+
+            if (updateResponse.Models.Any())
+            {
+                rewardCode.IsUsed = true;
+                rewardCode.UsedByUserId = userId;
+                return rewardCode;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<bool> TryUpdateProfileCoinsAsync(
+        Guid userId,
+        int expectedCoins,
+        int newCoins,
+        CancellationToken cancellationToken)
+    {
+        var updateResponse = await _supabase
+            .From<Profile>()
+            .Filter("id", PostgrestOperator.Equals, userId.ToString())
+            .Filter("coins", PostgrestOperator.Equals, expectedCoins.ToString())
+            .Set(x => x.Coins, newCoins)
+            .Update(cancellationToken: cancellationToken);
+
+        return updateResponse.Models.Any();
+    }
+
+    private async Task<long> InsertUserRewardAsync(
+        Guid userId,
+        long rewardId,
+        CancellationToken cancellationToken)
+    {
+        var response = await _supabase
+            .From<UserReward>()
+            .Insert(new UserReward
+            {
+                UserId = userId,
+                RewardId = rewardId
+            }, new PostgrestQueryOptions(), cancellationToken);
+
+        return response.Models.First().Id;
+    }
+
+    private async Task<bool> UserAlreadyOwnsRewardAsync(
+        Guid userId,
+        long rewardId,
+        CancellationToken cancellationToken)
+    {
+        var response = await _supabase
+            .From<UserReward>()
+            .Select("*")
+            .Filter("user_id", PostgrestOperator.Equals, userId.ToString())
+            .Filter("reward_id", PostgrestOperator.Equals, rewardId.ToString())
+            .Limit(1)
+            .Get(cancellationToken);
+
+        return response.Models.Any();
+    }
+
+    private async Task<bool> TryCompensatePurchaseAsync(
+        Guid userId,
+        int restoredCoins,
+        long? userRewardId,
+        long? rewardCodeId,
+        string rewardType,
         CancellationToken cancellationToken)
     {
         try
         {
-            await using var connection = new NpgsqlConnection(_databaseConnectionString);
-            await connection.OpenAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await RestoreProfileCoinsAsync(userId, restoredCoins, cancellationToken);
 
-            await ExecuteAsync(
-                connection,
-                transaction,
-                """
-                update profiles
-                set coins = coins + @coins
-                where id = @userId;
-                """,
-                new NpgsqlParameter("coins", refundedCoins),
-                new NpgsqlParameter("userId", userId),
-                cancellationToken);
+            if (userRewardId.HasValue)
+            {
+                await DeleteUserRewardAsync(userRewardId.Value, cancellationToken);
+            }
 
-            await ExecuteAsync(
-                connection,
-                transaction,
-                """
-                delete from user_rewards
-                where id = @userRewardId;
-                """,
-                new NpgsqlParameter("userRewardId", userRewardId),
-                cancellationToken);
+            if (rewardCodeId.HasValue)
+            {
+                await ReleaseRewardCodeAsync(rewardCodeId.Value, cancellationToken);
+            }
 
-            await ExecuteAsync(
-                connection,
-                transaction,
-                """
-                update reward_codes
-                set is_used = false,
-                    used_by_user_id = null
-                where id = @rewardCodeId;
-                """,
-                new NpgsqlParameter("rewardCodeId", rewardCodeId),
-                cancellationToken);
-
-            await transaction.CommitAsync(cancellationToken);
             return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Failed to compensate subscription reward purchase. UserId: {UserId}, UserRewardId: {UserRewardId}, RewardCodeId: {RewardCodeId}",
+                "Failed to compensate reward purchase. RewardType: {RewardType}, UserId: {UserId}, UserRewardId: {UserRewardId}, RewardCodeId: {RewardCodeId}",
+                rewardType,
                 userId,
                 userRewardId,
                 rewardCodeId);
@@ -494,66 +530,62 @@ public class RewardService
         }
     }
 
-    private async Task<bool> RevertDiscordRolePurchaseAsync(
+    private async Task RestoreProfileCoinsAsync(
         Guid userId,
-        int refundedCoins,
-        long userRewardId,
+        int restoredCoins,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            await using var connection = new NpgsqlConnection(_databaseConnectionString);
-            await connection.OpenAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-            await ExecuteAsync(
-                connection,
-                transaction,
-                """
-                update profiles
-                set coins = coins + @coins
-                where id = @userId;
-                """,
-                new NpgsqlParameter("coins", refundedCoins),
-                new NpgsqlParameter("userId", userId),
-                cancellationToken);
-
-            await ExecuteAsync(
-                connection,
-                transaction,
-                """
-                delete from user_rewards
-                where id = @userRewardId;
-                """,
-                new NpgsqlParameter("userRewardId", userRewardId),
-                cancellationToken);
-
-            await transaction.CommitAsync(cancellationToken);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Failed to compensate Discord role reward purchase. UserId: {UserId}, UserRewardId: {UserRewardId}",
-                userId,
-                userRewardId);
-            return false;
-        }
+        await _supabase
+            .From<Profile>()
+            .Filter("id", PostgrestOperator.Equals, userId.ToString())
+            .Set(x => x.Coins, restoredCoins)
+            .Update(cancellationToken: cancellationToken);
     }
 
-    private static RewardPurchaseResult BuildFailedPurchaseResult(
+    private async Task ReleaseRewardCodeAsync(long rewardCodeId, CancellationToken cancellationToken)
+    {
+        await _supabase
+            .From<RewardCode>()
+            .Filter("id", PostgrestOperator.Equals, rewardCodeId.ToString())
+            .Set(x => x.IsUsed, false)
+            .Set(x => x.UsedByUserId!, null)
+            .Update(cancellationToken: cancellationToken);
+    }
+
+    private async Task DeleteUserRewardAsync(long userRewardId, CancellationToken cancellationToken)
+    {
+        await _supabase
+            .From<UserReward>()
+            .Filter("id", PostgrestOperator.Equals, userRewardId.ToString())
+            .Delete(cancellationToken: cancellationToken);
+    }
+
+    private static RewardPurchaseResult BuildPurchaseResult(
         RewardPurchaseStatus status,
-        RewardSnapshot reward,
-        int currentCoins) =>
+        Reward reward,
+        int? remainingCoins,
+        string? failureDetail = null) =>
         new()
         {
             Status = status,
             RewardId = reward.Id,
             RewardName = reward.Name,
             RewardType = reward.Type,
-            RemainingCoins = currentCoins
+            RemainingCoins = remainingCoins,
+            FailureDetail = failureDetail
         };
+
+    private static RewardPurchaseResult BuildCompensatedFailureResult(
+        bool compensationSucceeded,
+        RewardPurchaseStatus compensatedStatus,
+        Reward reward,
+        int restoredCoins,
+        string? failureDetail) =>
+        BuildPurchaseResult(
+            compensationSucceeded ? compensatedStatus : RewardPurchaseStatus.CompensationFailed,
+            reward,
+            compensationSucceeded ? restoredCoins : null,
+            failureDetail);
 
     private async Task<Profile?> GetProfileAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -567,224 +599,16 @@ public class RewardService
         return response.Models.FirstOrDefault();
     }
 
-    private static async Task<ProfileSnapshot?> GetProfileForUpdateAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid userId,
-        CancellationToken cancellationToken)
+    private async Task<Reward?> GetRewardAsync(long rewardId, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
-            """
-            select id, coins, discord_id
-            from profiles
-            where id = @userId
-            for update;
-            """,
-            connection,
-            transaction);
+        var response = await _supabase
+            .From<Reward>()
+            .Select("*")
+            .Filter("id", PostgrestOperator.Equals, rewardId.ToString())
+            .Limit(1)
+            .Get(cancellationToken);
 
-        command.Parameters.AddWithValue("userId", userId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new ProfileSnapshot(
-            reader.GetGuid(0),
-            reader.GetInt32(1),
-            reader.IsDBNull(2) ? null : reader.GetString(2));
-    }
-
-    private static async Task<RewardSnapshot?> GetRewardRowAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        long rewardId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            select id, name, type, price_coins, is_active, discord_role_id
-            from rewards
-            where id = @rewardId
-            limit 1;
-            """,
-            connection,
-            transaction);
-
-        command.Parameters.AddWithValue("rewardId", rewardId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new RewardSnapshot(
-            reader.GetInt64(0),
-            reader.GetString(1),
-            reader.GetString(2),
-            reader.GetInt32(3),
-            reader.GetBoolean(4),
-            reader.IsDBNull(5) ? null : reader.GetString(5));
-    }
-
-    private static async Task<RewardCodeSnapshot?> GetAvailableRewardCodeForUpdateAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        long rewardId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            select id, code_value
-            from reward_codes
-            where reward_id = @rewardId
-              and is_used = false
-            order by id
-            limit 1
-            for update skip locked;
-            """,
-            connection,
-            transaction);
-
-        command.Parameters.AddWithValue("rewardId", rewardId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new RewardCodeSnapshot(
-            reader.GetInt64(0),
-            reader.GetString(1));
-    }
-
-    private static async Task<bool> UserAlreadyOwnsRewardAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid userId,
-        long rewardId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            select 1
-            from user_rewards
-            where user_id = @userId
-              and reward_id = @rewardId
-            limit 1;
-            """,
-            connection,
-            transaction);
-
-        command.Parameters.AddWithValue("userId", userId);
-        command.Parameters.AddWithValue("rewardId", rewardId);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is not null;
-    }
-
-    private static async Task UpdateProfileCoinsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid userId,
-        int remainingCoins,
-        CancellationToken cancellationToken)
-    {
-        await ExecuteAsync(
-            connection,
-            transaction,
-            """
-            update profiles
-            set coins = @remainingCoins
-            where id = @userId;
-            """,
-            new NpgsqlParameter("remainingCoins", remainingCoins),
-            new NpgsqlParameter("userId", userId),
-            cancellationToken);
-    }
-
-    private static async Task<long> InsertUserRewardAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid userId,
-        long rewardId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            insert into user_rewards (user_id, reward_id)
-            values (@userId, @rewardId)
-            returning id;
-            """,
-            connection,
-            transaction);
-
-        command.Parameters.AddWithValue("userId", userId);
-        command.Parameters.AddWithValue("rewardId", rewardId);
-
-        var scalar = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt64(scalar);
-    }
-
-    private static async Task MarkRewardCodeAsUsedAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        long rewardCodeId,
-        Guid userId,
-        CancellationToken cancellationToken)
-    {
-        await ExecuteAsync(
-            connection,
-            transaction,
-            """
-            update reward_codes
-            set is_used = true,
-                used_by_user_id = @userId
-            where id = @rewardCodeId;
-            """,
-            new NpgsqlParameter("userId", userId),
-            new NpgsqlParameter("rewardCodeId", rewardCodeId),
-            cancellationToken);
-    }
-
-    private static async Task ExecuteAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sql,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task ExecuteAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sql,
-        NpgsqlParameter parameter,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.Add(parameter);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task ExecuteAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sql,
-        NpgsqlParameter firstParameter,
-        NpgsqlParameter secondParameter,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.Add(firstParameter);
-        command.Parameters.Add(secondParameter);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return response.Models.FirstOrDefault();
     }
 
     private static string BuildSubscriptionCodeMessage(string rewardName, string rewardCode) =>
@@ -793,119 +617,4 @@ public class RewardService
         "Hier is je code:" + Environment.NewLine +
         rewardCode + Environment.NewLine + Environment.NewLine +
         "Deel je code niet met anderen.";
-
-    private static string? NormalizeDatabaseConnectionString(string? rawValue)
-    {
-        if (string.IsNullOrWhiteSpace(rawValue))
-        {
-            return null;
-        }
-
-        var trimmedValue = rawValue.Trim().Trim('"', '\'');
-        if (string.IsNullOrWhiteSpace(trimmedValue))
-        {
-            return null;
-        }
-
-        if (!trimmedValue.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
-            !trimmedValue.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
-        {
-            return trimmedValue;
-        }
-
-        if (!Uri.TryCreate(trimmedValue, UriKind.Absolute, out var uri))
-        {
-            return trimmedValue;
-        }
-
-        var builder = new NpgsqlConnectionStringBuilder
-        {
-            Host = uri.Host,
-            Port = uri.IsDefaultPort ? 5432 : uri.Port,
-            Database = uri.AbsolutePath.Trim('/'),
-        };
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            var userInfoParts = uri.UserInfo.Split(':', 2);
-            if (userInfoParts.Length > 0 && !string.IsNullOrWhiteSpace(userInfoParts[0]))
-            {
-                builder.Username = Uri.UnescapeDataString(userInfoParts[0]);
-            }
-
-            if (userInfoParts.Length > 1)
-            {
-                builder.Password = Uri.UnescapeDataString(userInfoParts[1]);
-            }
-        }
-
-        foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var keyValue = part.Split('=', 2);
-            var key = Uri.UnescapeDataString(keyValue[0]);
-            var value = keyValue.Length > 1 ? Uri.UnescapeDataString(keyValue[1]) : string.Empty;
-
-            ApplyConnectionStringOption(builder, key, value);
-        }
-
-        return builder.ConnectionString;
-    }
-
-    private static void ApplyConnectionStringOption(
-        NpgsqlConnectionStringBuilder builder,
-        string key,
-        string value)
-    {
-        switch (key.Trim().ToLowerInvariant())
-        {
-            case "sslmode":
-            case "ssl mode":
-                builder.SslMode = Enum.TryParse<SslMode>(value, ignoreCase: true, out var sslMode)
-                    ? sslMode
-                    : builder.SslMode;
-                break;
-            case "pooling":
-                if (bool.TryParse(value, out var pooling))
-                {
-                    builder.Pooling = pooling;
-                }
-                break;
-            case "timeout":
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var timeout))
-                {
-                    builder.Timeout = timeout;
-                }
-                break;
-            case "commandtimeout":
-            case "command timeout":
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var commandTimeout))
-                {
-                    builder.CommandTimeout = commandTimeout;
-                }
-                break;
-            case "keepalive":
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepAlive))
-                {
-                    builder.KeepAlive = keepAlive;
-                }
-                break;
-            case "application_name":
-            case "applicationname":
-            case "application name":
-                builder.ApplicationName = value;
-                break;
-            case "search_path":
-            case "searchpath":
-            case "search path":
-                builder.SearchPath = value;
-                break;
-            case "options":
-                builder.Options = value;
-                break;
-        }
-    }
-
-    private sealed record ProfileSnapshot(Guid Id, int Coins, string? DiscordId);
-    private sealed record RewardSnapshot(long Id, string Name, string Type, int PriceCoins, bool IsActive, string? DiscordRoleId);
-    private sealed record RewardCodeSnapshot(long Id, string CodeValue);
 }

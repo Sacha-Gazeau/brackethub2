@@ -26,46 +26,28 @@ public class RewardsController : ControllerBase
     {
         try
         {
-            var (isAuthenticated, userId, authErrorMessage) =
-                await _supabaseAuthService.TryGetAuthenticatedUserIdAsync(Request, cancellationToken);
-
-            if (!isAuthenticated || string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+            var authResult = await TryGetAuthenticatedUserIdAsync(cancellationToken);
+            if (!authResult.Succeeded)
             {
-                return Unauthorized(new { message = authErrorMessage });
+                return authResult.FailureResult!;
             }
 
-            var result = await _rewardService.GetRewardCatalogAsync(parsedUserId, cancellationToken);
+            var result = await _rewardService.GetRewardCatalogAsync(authResult.UserId, cancellationToken);
             if (result.Status == RewardCatalogStatus.ProfileNotFound)
             {
-                return NotFound(new { message = "Profile not found." });
+                return NotFound(CreateErrorPayload("profile_not_found", "Profiel niet gevonden."));
             }
 
-            return Ok(new
-            {
-                coins_balance = result.CoinsBalance,
-                discord_account_linked = result.DiscordAccountLinked,
-                rewards = result.Rewards.Select(reward => new
-                {
-                    id = reward.Id,
-                    name = reward.Name,
-                    description = reward.Description,
-                    type = reward.Type,
-                    price_coins = reward.PriceCoins,
-                    stock = reward.Stock,
-                    already_purchased = reward.AlreadyPurchased,
-                    is_available = reward.IsAvailable
-                })
-            });
+            return Ok(CreateCatalogPayload(result));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load rewards catalog.");
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                code = "reward_catalog_failed",
-                message = "De rewards-catalogus kon niet geladen worden.",
-                detail = ex.Message
-            });
+            return CreateErrorResult(
+                StatusCodes.Status500InternalServerError,
+                "reward_catalog_failed",
+                "De rewards-catalogus kon niet geladen worden.",
+                ex.Message);
         }
     }
 
@@ -74,54 +56,100 @@ public class RewardsController : ControllerBase
     {
         try
         {
-            var (isAuthenticated, userId, authErrorMessage) =
-                await _supabaseAuthService.TryGetAuthenticatedUserIdAsync(Request, cancellationToken);
-
-            if (!isAuthenticated || string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+            var authResult = await TryGetAuthenticatedUserIdAsync(cancellationToken);
+            if (!authResult.Succeeded)
             {
-                return Unauthorized(new { message = authErrorMessage });
+                return authResult.FailureResult!;
             }
 
-            var result = await _rewardService.PurchaseRewardAsync(parsedUserId, id, cancellationToken);
-
-            return result.Status switch
-            {
-                RewardPurchaseStatus.Success => Ok(new
-                {
-                    message = string.Equals(result.RewardType, RewardTypes.SubscriptionCode, StringComparison.Ordinal)
-                        ? "Reward gekocht. De code wordt via DM verstuurd."
-                        : "Reward gekocht. Je Discord-rol werd toegevoegd.",
-                    reward_id = result.RewardId,
-                    reward_type = result.RewardType,
-                    reward_name = result.RewardName,
-                    remaining_coins = result.RemainingCoins
-                }),
-                RewardPurchaseStatus.ProfileNotFound => NotFound(new { code = "profile_not_found", message = "Profiel niet gevonden." }),
-                RewardPurchaseStatus.RewardNotFound => NotFound(new { code = "reward_not_found", message = "Reward niet gevonden." }),
-                RewardPurchaseStatus.RewardInactive => BadRequest(new { code = "reward_inactive", message = "Deze reward is niet beschikbaar." }),
-                RewardPurchaseStatus.UnsupportedRewardType => BadRequest(new { code = "unsupported_reward_type", message = "Dit rewardtype wordt niet ondersteund." }),
-                RewardPurchaseStatus.DiscordAccountRequired => BadRequest(new { code = "discord_account_required", message = "Discord-account vereist." }),
-                RewardPurchaseStatus.InsufficientCoins => BadRequest(new { code = "insufficient_coins", message = "Je hebt niet genoeg coins." }),
-                RewardPurchaseStatus.NoCodesAvailable => Conflict(new { code = "reward_out_of_stock", message = "Niet beschikbaar." }),
-                RewardPurchaseStatus.AlreadyPurchased => Conflict(new { code = "reward_already_owned", message = "Je hebt deze rol al" }),
-                RewardPurchaseStatus.DiscordRoleNotConfigured => StatusCode(StatusCodes.Status500InternalServerError, new { code = "discord_role_not_configured", message = "Deze reward is nog niet volledig ingesteld." }),
-                RewardPurchaseStatus.DatabaseConfigurationMissing => StatusCode(StatusCodes.Status500InternalServerError, new { code = "database_configuration_missing", message = "De rewards-backend mist een PostgreSQL connectiestring.", detail = result.FailureDetail }),
-                RewardPurchaseStatus.DatabaseConnectionFailed => StatusCode(StatusCodes.Status500InternalServerError, new { code = "database_connection_failed", message = "De rewards-database kon niet worden bereikt.", detail = result.FailureDetail }),
-                RewardPurchaseStatus.DiscordDmFailed => BadRequest(new { code = "discord_dm_failed", message = "Je Discord privéberichten moeten openstaan", detail = result.FailureDetail }),
-                RewardPurchaseStatus.DiscordRoleAssignmentFailed => StatusCode(StatusCodes.Status502BadGateway, new { code = "discord_role_assignment_failed", message = "De Discord-rol kon niet worden toegekend.", detail = result.FailureDetail }),
-                RewardPurchaseStatus.CompensationFailed => StatusCode(StatusCodes.Status500InternalServerError, new { code = "reward_compensation_failed", message = "De aankoop kon niet volledig worden afgerond. Neem contact op met support.", detail = result.FailureDetail }),
-                _ => StatusCode(StatusCodes.Status500InternalServerError, new { code = "reward_purchase_failed", message = "De aankoop kon niet worden voltooid." })
-            };
+            var result = await _rewardService.PurchaseRewardAsync(authResult.UserId, id, cancellationToken);
+            return CreatePurchaseActionResult(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled reward purchase failure for reward {RewardId}.", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                code = "reward_purchase_failed",
-                message = "De aankoop kon niet worden voltooid.",
-                detail = ex.Message
-            });
+            return CreateErrorResult(
+                StatusCodes.Status500InternalServerError,
+                "reward_purchase_failed",
+                "De aankoop kon niet worden voltooid.",
+                ex.Message);
         }
     }
+
+    private async Task<(bool Succeeded, Guid UserId, IActionResult? FailureResult)> TryGetAuthenticatedUserIdAsync(
+        CancellationToken cancellationToken)
+    {
+        var (isAuthenticated, userId, authErrorMessage) =
+            await _supabaseAuthService.TryGetAuthenticatedUserIdAsync(Request, cancellationToken);
+
+        if (!isAuthenticated || string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+        {
+            return (false, Guid.Empty, Unauthorized(new { message = authErrorMessage }));
+        }
+
+        return (true, parsedUserId, null);
+    }
+
+    private IActionResult CreatePurchaseActionResult(RewardPurchaseResult result) =>
+        result.Status switch
+        {
+            RewardPurchaseStatus.Success => Ok(new
+            {
+                message = GetPurchaseSuccessMessage(result.RewardType),
+                reward_id = result.RewardId,
+                reward_type = result.RewardType,
+                reward_name = result.RewardName,
+                remaining_coins = result.RemainingCoins
+            }),
+            RewardPurchaseStatus.ProfileNotFound => CreateErrorResult(StatusCodes.Status404NotFound, "profile_not_found", "Profiel niet gevonden."),
+            RewardPurchaseStatus.RewardNotFound => CreateErrorResult(StatusCodes.Status404NotFound, "reward_not_found", "Reward niet gevonden."),
+            RewardPurchaseStatus.RewardInactive => CreateErrorResult(StatusCodes.Status400BadRequest, "reward_inactive", "Deze reward is niet beschikbaar."),
+            RewardPurchaseStatus.UnsupportedRewardType => CreateErrorResult(StatusCodes.Status400BadRequest, "unsupported_reward_type", "Dit rewardtype wordt niet ondersteund."),
+            RewardPurchaseStatus.DiscordAccountRequired => CreateErrorResult(StatusCodes.Status400BadRequest, "discord_account_required", "Discord-account vereist."),
+            RewardPurchaseStatus.InsufficientCoins => CreateErrorResult(StatusCodes.Status400BadRequest, "insufficient_coins", "Je hebt niet genoeg coins."),
+            RewardPurchaseStatus.NoCodesAvailable => CreateErrorResult(StatusCodes.Status409Conflict, "reward_out_of_stock", "Niet beschikbaar."),
+            RewardPurchaseStatus.AlreadyPurchased => CreateErrorResult(StatusCodes.Status409Conflict, "reward_already_owned", "Je hebt deze rol al"),
+            RewardPurchaseStatus.DiscordRoleNotConfigured => CreateErrorResult(StatusCodes.Status500InternalServerError, "discord_role_not_configured", "Deze reward is nog niet volledig ingesteld."),
+            RewardPurchaseStatus.DiscordDmFailed => CreateErrorResult(StatusCodes.Status400BadRequest, "discord_dm_failed", "Je Discord privéberichten moeten openstaan", result.FailureDetail),
+            RewardPurchaseStatus.DiscordRoleAssignmentFailed => CreateErrorResult(StatusCodes.Status502BadGateway, "discord_role_assignment_failed", "De Discord-rol kon niet worden toegekend.", result.FailureDetail),
+            RewardPurchaseStatus.CompensationFailed => CreateErrorResult(StatusCodes.Status500InternalServerError, "reward_compensation_failed", "De aankoop kon niet volledig worden afgerond. Neem contact op met support.", result.FailureDetail),
+            _ => CreateErrorResult(StatusCodes.Status500InternalServerError, "reward_purchase_failed", "De aankoop kon niet worden voltooid.")
+        };
+
+    private static object CreateCatalogPayload(RewardCatalogResult result) => new
+    {
+        coins_balance = result.CoinsBalance,
+        discord_account_linked = result.DiscordAccountLinked,
+        rewards = result.Rewards.Select(reward => new
+        {
+            id = reward.Id,
+            name = reward.Name,
+            description = reward.Description,
+            type = reward.Type,
+            price_coins = reward.PriceCoins,
+            stock = reward.Stock,
+            already_purchased = reward.AlreadyPurchased,
+            is_available = reward.IsAvailable
+        })
+    };
+
+    private IActionResult CreateErrorResult(
+        int statusCode,
+        string code,
+        string message,
+        string? detail = null) =>
+        StatusCode(statusCode, CreateErrorPayload(code, message, detail));
+
+    private static object CreateErrorPayload(
+        string code,
+        string message,
+        string? detail = null) =>
+        string.IsNullOrWhiteSpace(detail)
+            ? new { code, message }
+            : new { code, message, detail };
+
+    private static string GetPurchaseSuccessMessage(string rewardType) =>
+        string.Equals(rewardType, RewardTypes.SubscriptionCode, StringComparison.Ordinal)
+            ? "Reward gekocht. De code wordt via DM verstuurd."
+            : "Reward gekocht. Je Discord-rol werd toegevoegd.";
 }
