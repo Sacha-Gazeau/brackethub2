@@ -2,6 +2,7 @@ using api.Models;
 using Npgsql;
 using PostgrestOperator = Supabase.Postgrest.Constants.Operator;
 using SupabaseClient = Supabase.Client;
+using System.Globalization;
 
 namespace api.Services;
 
@@ -82,7 +83,7 @@ public class RewardService
         _supabase = supabase;
         _discordService = discordService;
         _logger = logger;
-        _databaseConnectionString = configuration["Supabase:DatabaseConnectionString"];
+        _databaseConnectionString = NormalizeDatabaseConnectionString(configuration["Supabase:DatabaseConnectionString"]);
     }
 
     public async Task<RewardCatalogResult> GetRewardCatalogAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -792,6 +793,117 @@ public class RewardService
         "Hier is je code:" + Environment.NewLine +
         rewardCode + Environment.NewLine + Environment.NewLine +
         "Deel je code niet met anderen.";
+
+    private static string? NormalizeDatabaseConnectionString(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return null;
+        }
+
+        var trimmedValue = rawValue.Trim().Trim('"', '\'');
+        if (string.IsNullOrWhiteSpace(trimmedValue))
+        {
+            return null;
+        }
+
+        if (!trimmedValue.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !trimmedValue.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmedValue;
+        }
+
+        if (!Uri.TryCreate(trimmedValue, UriKind.Absolute, out var uri))
+        {
+            return trimmedValue;
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.IsDefaultPort ? 5432 : uri.Port,
+            Database = uri.AbsolutePath.Trim('/'),
+        };
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            var userInfoParts = uri.UserInfo.Split(':', 2);
+            if (userInfoParts.Length > 0 && !string.IsNullOrWhiteSpace(userInfoParts[0]))
+            {
+                builder.Username = Uri.UnescapeDataString(userInfoParts[0]);
+            }
+
+            if (userInfoParts.Length > 1)
+            {
+                builder.Password = Uri.UnescapeDataString(userInfoParts[1]);
+            }
+        }
+
+        foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var keyValue = part.Split('=', 2);
+            var key = Uri.UnescapeDataString(keyValue[0]);
+            var value = keyValue.Length > 1 ? Uri.UnescapeDataString(keyValue[1]) : string.Empty;
+
+            ApplyConnectionStringOption(builder, key, value);
+        }
+
+        return builder.ConnectionString;
+    }
+
+    private static void ApplyConnectionStringOption(
+        NpgsqlConnectionStringBuilder builder,
+        string key,
+        string value)
+    {
+        switch (key.Trim().ToLowerInvariant())
+        {
+            case "sslmode":
+            case "ssl mode":
+                builder.SslMode = Enum.TryParse<SslMode>(value, ignoreCase: true, out var sslMode)
+                    ? sslMode
+                    : builder.SslMode;
+                break;
+            case "pooling":
+                if (bool.TryParse(value, out var pooling))
+                {
+                    builder.Pooling = pooling;
+                }
+                break;
+            case "timeout":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var timeout))
+                {
+                    builder.Timeout = timeout;
+                }
+                break;
+            case "commandtimeout":
+            case "command timeout":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var commandTimeout))
+                {
+                    builder.CommandTimeout = commandTimeout;
+                }
+                break;
+            case "keepalive":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepAlive))
+                {
+                    builder.KeepAlive = keepAlive;
+                }
+                break;
+            case "application_name":
+            case "applicationname":
+            case "application name":
+                builder.ApplicationName = value;
+                break;
+            case "search_path":
+            case "searchpath":
+            case "search path":
+                builder.SearchPath = value;
+                break;
+            case "options":
+                builder.Options = value;
+                break;
+        }
+    }
 
     private sealed record ProfileSnapshot(Guid Id, int Coins, string? DiscordId);
     private sealed record RewardSnapshot(long Id, string Name, string Type, int PriceCoins, bool IsActive, string? DiscordRoleId);
