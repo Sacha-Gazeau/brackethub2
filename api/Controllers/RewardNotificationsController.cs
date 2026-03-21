@@ -8,10 +8,14 @@ namespace api.Controllers;
 public class RewardNotificationsController : ControllerBase
 {
     private readonly IDiscordService _discordService;
+    private readonly IAppTextService _text;
 
-    public RewardNotificationsController(IDiscordService discordService)
+    public RewardNotificationsController(
+        IDiscordService discordService,
+        IAppTextService text)
     {
         _discordService = discordService;
+        _text = text;
     }
 
     [HttpPost("deliver")]
@@ -25,8 +29,8 @@ public class RewardNotificationsController : ControllerBase
         return Ok(new
         {
             message = sent
-                ? "Reward delivery DM sent."
-                : "Reward delivery completed, but the Discord DM could not be delivered."
+                ? _text.Get("backendMessages.rewards.deliverySent")
+                : _text.Get("backendMessages.rewards.deliveryFailed")
         });
     }
 }

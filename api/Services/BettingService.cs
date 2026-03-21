@@ -326,14 +326,49 @@ public class BettingService
         };
     }
 
-    private async Task<TournamentInsert?> GetTournamentAsync(long tournamentId)
+    public async Task RefundAndDeleteTournamentBetsAsync(
+        long tournamentId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _supabase
+            .From<Bet>()
+            .Select("*")
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Get(cancellationToken);
+
+        foreach (var bet in response.Models)
+        {
+            if (!string.Equals(bet.Status, "pending", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var profile = await GetProfileAsync(bet.UserId, cancellationToken);
+            if (profile == null)
+            {
+                continue;
+            }
+
+            profile.Coins += bet.CoinsBet;
+            await profile.Update<Profile>(cancellationToken: cancellationToken);
+        }
+
+        await _supabase
+            .From<Bet>()
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Delete(cancellationToken: cancellationToken);
+    }
+
+    private async Task<TournamentInsert?> GetTournamentAsync(
+        long tournamentId,
+        CancellationToken cancellationToken = default)
     {
         var response = await _supabase
             .From<TournamentInsert>()
             .Select("*")
             .Filter("id", PostgrestOperator.Equals, tournamentId.ToString())
             .Limit(1)
-            .Get();
+            .Get(cancellationToken);
 
         return response.Models.FirstOrDefault();
     }
@@ -352,14 +387,16 @@ public class BettingService
         return response.Models.FirstOrDefault();
     }
 
-    private async Task<Profile?> GetProfileAsync(Guid userId)
+    private async Task<Profile?> GetProfileAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
     {
         var response = await _supabase
             .From<Profile>()
             .Select("*")
             .Filter("id", PostgrestOperator.Equals, userId.ToString())
             .Limit(1)
-            .Get();
+            .Get(cancellationToken);
 
         return response.Models.FirstOrDefault();
     }

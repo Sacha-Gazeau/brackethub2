@@ -12,4 +12,8 @@
     <PackageReference Include="Supabase" Version="1.1.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="../app/src/data/nl-BE.json" Link="Localization/nl-BE.json" LogicalName="api.Localization.nl-BE.json" />
+  </ItemGroup>
+
 </Project>

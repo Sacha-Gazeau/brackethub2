@@ -40,6 +40,7 @@ builder.Services.AddSingleton(new DiscordSocketClient(new DiscordSocketConfig
     GatewayIntents = GatewayIntents.Guilds | GatewayIntents.DirectMessages,
     LogGatewayIntentWarnings = false
 }));
+builder.Services.AddSingleton<IAppTextService, AppTextService>();
 builder.Services.AddScoped<ISupabaseAuthService, SupabaseAuthService>();
 builder.Services.AddScoped<DailyRewardService>();
 builder.Services.AddScoped<BettingService>();

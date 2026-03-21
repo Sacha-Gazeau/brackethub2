@@ -71,15 +71,18 @@ public class RewardService
 
     private readonly SupabaseClient _supabase;
     private readonly IDiscordService _discordService;
+    private readonly IAppTextService _text;
     private readonly ILogger<RewardService> _logger;
 
     public RewardService(
         SupabaseClient supabase,
         IDiscordService discordService,
+        IAppTextService text,
         ILogger<RewardService> logger)
     {
         _supabase = supabase;
         _discordService = discordService;
+        _text = text;
         _logger = logger;
     }
 
@@ -250,7 +253,7 @@ public class RewardService
         {
             userRewardId = await InsertUserRewardAsync(profile.Id, reward.Id, cancellationToken);
 
-            var dmMessage = BuildSubscriptionCodeMessage(reward.Name, reservedCode.CodeValue);
+            var dmMessage = BuildRewardDeliveryMessage(reward.Name, reservedCode.CodeValue);
             var dmResult = await _discordService.SendDirectMessageAsync(profile.DiscordId!, dmMessage, cancellationToken);
             if (dmResult.Success)
             {
@@ -611,10 +614,10 @@ public class RewardService
         return response.Models.FirstOrDefault();
     }
 
-    private static string BuildSubscriptionCodeMessage(string rewardName, string rewardCode) =>
-        "Je reward is klaar!" + Environment.NewLine + Environment.NewLine +
-        $"Reward: {rewardName}" + Environment.NewLine + Environment.NewLine +
-        "Hier is je code:" + Environment.NewLine +
-        rewardCode + Environment.NewLine + Environment.NewLine +
-        "Deel je code niet met anderen.";
+    private string BuildRewardDeliveryMessage(string rewardName, string rewardCode) =>
+        _text.Get("discordMessages.rewardDelivery", new Dictionary<string, string?>
+        {
+            ["rewardName"] = rewardName,
+            ["rewardCode"] = rewardCode
+        });
 }

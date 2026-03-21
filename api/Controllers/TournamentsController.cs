@@ -4,6 +4,7 @@ using System.Text;
 using Supabase;
 using api.Models;
 using api.Services;
+using PostgrestOperator = Supabase.Postgrest.Constants.Operator;
 
 namespace api.Controllers;
 
@@ -15,11 +16,19 @@ public class TournamentsController : ControllerBase
 
     private readonly Client _supabase;
     private readonly ISupabaseAuthService _supabaseAuthService;
+    private readonly BettingService _bettingService;
+    private readonly ILogger<TournamentsController> _logger;
 
-    public TournamentsController(Client supabase, ISupabaseAuthService supabaseAuthService)
+    public TournamentsController(
+        Client supabase,
+        ISupabaseAuthService supabaseAuthService,
+        BettingService bettingService,
+        ILogger<TournamentsController> logger)
     {
         _supabase = supabase;
         _supabaseAuthService = supabaseAuthService;
+        _bettingService = bettingService;
+        _logger = logger;
     }
 
     [HttpPost]
@@ -99,12 +108,7 @@ public class TournamentsController : ControllerBase
     {
         try
         {
-            var query = _supabase.From<TournamentInsert>().Select("*").Limit(1);
-            var response = long.TryParse(identifier, out var tournamentId)
-                ? await query.Filter("id", Supabase.Postgrest.Constants.Operator.Equals, tournamentId.ToString()).Get()
-                : await query.Filter("slug", Supabase.Postgrest.Constants.Operator.Equals, identifier).Get();
-
-            var tournament = response.Models.FirstOrDefault();
+            var tournament = await GetTournamentByIdentifierAsync(identifier);
             if (tournament == null)
             {
                 return NotFound(new { message = "Tournament not found." });
@@ -117,6 +121,67 @@ public class TournamentsController : ControllerBase
             return StatusCode(500, new
             {
                 message = "Unable to load the tournament right now.",
+                error = ex.Message
+            });
+        }
+    }
+
+    [HttpDelete("{identifier}")]
+    public async Task<IActionResult> DeleteTournament(
+        string identifier,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tournament = await GetTournamentByIdentifierAsync(identifier, cancellationToken);
+            if (tournament == null)
+            {
+                return NotFound(new { message = "Tournament not found." });
+            }
+
+            var (isAuthenticated, userId, authErrorMessage) =
+                await _supabaseAuthService.TryGetAuthenticatedUserIdAsync(Request, cancellationToken);
+            if (!isAuthenticated || string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized(new { message = authErrorMessage });
+            }
+
+            if (!string.Equals(tournament.UserId, userId, StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new
+                {
+                    message = "Only the organizer can delete this tournament."
+                });
+            }
+
+            if (!string.Equals(GetEffectiveTournamentStatus(tournament), "aankomend", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new
+                {
+                    message = "Only upcoming tournaments can be deleted."
+                });
+            }
+
+            await DeleteTournamentRelationsAsync(tournament.Id, cancellationToken);
+
+            await _supabase
+                .From<TournamentInsert>()
+                .Filter("id", PostgrestOperator.Equals, tournament.Id.ToString())
+                .Delete(cancellationToken: cancellationToken);
+
+            return Ok(new
+            {
+                message = "Tournament deleted successfully.",
+                slug = tournament.Slug,
+                id = tournament.Id
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete tournament {TournamentIdentifier}.", identifier);
+            return StatusCode(500, new
+            {
+                message = "Unable to delete the tournament right now.",
                 error = ex.Message
             });
         }
@@ -219,6 +284,116 @@ public class TournamentsController : ControllerBase
             .Get();
 
         return response.Models.Count > 0;
+    }
+
+    private async Task<TournamentInsert?> GetTournamentByIdentifierAsync(
+        string identifier,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _supabase.From<TournamentInsert>().Select("*").Limit(1);
+        var response = long.TryParse(identifier, out var tournamentId)
+            ? await query.Filter("id", PostgrestOperator.Equals, tournamentId.ToString()).Get(cancellationToken)
+            : await query.Filter("slug", PostgrestOperator.Equals, identifier).Get(cancellationToken);
+
+        return response.Models.FirstOrDefault();
+    }
+
+    private async Task DeleteTournamentRelationsAsync(
+        long tournamentId,
+        CancellationToken cancellationToken)
+    {
+        await _bettingService.RefundAndDeleteTournamentBetsAsync(tournamentId, cancellationToken);
+
+        await _supabase
+            .From<Match>()
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Delete(cancellationToken: cancellationToken);
+
+        var groupIds = await LoadTournamentGroupIdsAsync(tournamentId, cancellationToken);
+        if (groupIds.Count > 0)
+        {
+            await _supabase
+                .From<GroupTeam>()
+                .Filter("group_id", PostgrestOperator.In, groupIds.Cast<object>().ToList())
+                .Delete(cancellationToken: cancellationToken);
+        }
+
+        var teamIds = await LoadTournamentTeamIdsAsync(tournamentId, cancellationToken);
+        if (teamIds.Count > 0)
+        {
+            await _supabase
+                .From<TeamMember>()
+                .Filter("team_id", PostgrestOperator.In, teamIds.Cast<object>().ToList())
+                .Delete(cancellationToken: cancellationToken);
+        }
+
+        await _supabase
+            .From<TournamentGroup>()
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Delete(cancellationToken: cancellationToken);
+
+        await _supabase
+            .From<Team>()
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Delete(cancellationToken: cancellationToken);
+    }
+
+    private async Task<List<long>> LoadTournamentGroupIdsAsync(
+        long tournamentId,
+        CancellationToken cancellationToken)
+    {
+        var response = await _supabase
+            .From<TournamentGroup>()
+            .Select("id")
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Get(cancellationToken);
+
+        return response.Models
+            .Select(group => group.Id)
+            .Where(id => id > 0)
+            .ToList();
+    }
+
+    private async Task<List<long>> LoadTournamentTeamIdsAsync(
+        long tournamentId,
+        CancellationToken cancellationToken)
+    {
+        var response = await _supabase
+            .From<Team>()
+            .Select("id")
+            .Filter("tournament_id", PostgrestOperator.Equals, tournamentId.ToString())
+            .Get(cancellationToken);
+
+        return response.Models
+            .Select(team => team.Id)
+            .Where(id => id > 0)
+            .ToList();
+    }
+
+    private static string GetEffectiveTournamentStatus(TournamentInsert tournament)
+    {
+        if (string.Equals(tournament.Status, "finished", StringComparison.OrdinalIgnoreCase))
+        {
+            return "finished";
+        }
+
+        var now = DateTime.UtcNow;
+        if (tournament.EndDate != default && now > tournament.EndDate.ToUniversalTime())
+        {
+            return "finished";
+        }
+
+        if (string.Equals(tournament.Status, "live", StringComparison.OrdinalIgnoreCase))
+        {
+            return "live";
+        }
+
+        if (tournament.StartDate != default && now >= tournament.StartDate.ToUniversalTime())
+        {
+            return "live";
+        }
+
+        return "aankomend";
     }
 
     private static object MapTournamentResponse(TournamentInsert tournament)

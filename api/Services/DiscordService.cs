@@ -7,15 +7,18 @@ namespace api.Services;
 public class DiscordService : IDiscordService
 {
     private readonly DiscordSocketClient _client;
+    private readonly IAppTextService _text;
     private readonly ILogger<DiscordService> _logger;
     private readonly ulong _guildId;
 
     public DiscordService(
         DiscordSocketClient client,
         IConfiguration configuration,
+        IAppTextService text,
         ILogger<DiscordService> logger)
     {
         _client = client;
+        _text = text;
         _logger = logger;
         _guildId = ulong.TryParse(configuration["Discord:GuildId"], out var configuredGuildId)
             ? configuredGuildId
@@ -38,13 +41,13 @@ public class DiscordService : IDiscordService
     {
         if (string.IsNullOrWhiteSpace(discordUserId))
         {
-            return new DiscordActionResult(false, "discord_user_id_missing", "Discord user id is required.");
+            return CreateFailure("discord_user_id_missing", "backendMessages.discord.errors.userIdMissing");
         }
 
         if (!ulong.TryParse(discordUserId, out var userId))
         {
             _logger.LogWarning("Discord ID '{DiscordId}' is invalid.", discordUserId);
-            return new DiscordActionResult(false, "discord_user_id_invalid", "Discord user id is invalid.");
+            return CreateFailure("discord_user_id_invalid", "backendMessages.discord.errors.userIdInvalid");
         }
 
         return await SendPrivateMessageCoreAsync(userId, message, cancellationToken);
@@ -57,24 +60,24 @@ public class DiscordService : IDiscordService
     {
         if (string.IsNullOrWhiteSpace(discordUserId))
         {
-            return new DiscordActionResult(false, "discord_user_id_missing", "Discord user id is required.");
+            return CreateFailure("discord_user_id_missing", "backendMessages.discord.errors.userIdMissing");
         }
 
         if (string.IsNullOrWhiteSpace(discordRoleId))
         {
-            return new DiscordActionResult(false, "discord_role_id_missing", "Discord role id is required.");
+            return CreateFailure("discord_role_id_missing", "backendMessages.discord.errors.roleIdMissing");
         }
 
         if (!ulong.TryParse(discordUserId, out var userId))
         {
             _logger.LogWarning("Discord ID '{DiscordId}' is invalid.", discordUserId);
-            return new DiscordActionResult(false, "discord_user_id_invalid", "Discord user id is invalid.");
+            return CreateFailure("discord_user_id_invalid", "backendMessages.discord.errors.userIdInvalid");
         }
 
         if (!ulong.TryParse(discordRoleId, out var roleId))
         {
             _logger.LogWarning("Discord role ID '{DiscordRoleId}' is invalid.", discordRoleId);
-            return new DiscordActionResult(false, "discord_role_id_invalid", "Discord role id is invalid.");
+            return CreateFailure("discord_role_id_invalid", "backendMessages.discord.errors.roleIdInvalid");
         }
 
         try
@@ -83,7 +86,7 @@ public class DiscordService : IDiscordService
             if (guildUserResult.User is null)
             {
                 return guildUserResult.Failure
-                    ?? new DiscordActionResult(false, "discord_user_not_in_guild", "Discord user is not in the configured guild.");
+                    ?? CreateFailure("discord_user_not_in_guild", "backendMessages.discord.errors.userNotInGuild");
             }
 
             await guildUserResult.User.AddRoleAsync(roleId, new RequestOptions
@@ -100,7 +103,7 @@ public class DiscordService : IDiscordService
                 "Discord role assignment forbidden. GuildId: {GuildId}, UserId: {UserId}",
                 _guildId,
                 userId);
-            return new DiscordActionResult(false, "discord_missing_permissions", "Discord bot is missing permission to assign this role.");
+            return CreateFailure("discord_missing_permissions", "backendMessages.discord.errors.missingPermissions");
         }
         catch (HttpException ex) when ((int)ex.HttpCode == 404)
         {
@@ -110,7 +113,7 @@ public class DiscordService : IDiscordService
                 _guildId,
                 userId,
                 roleId);
-            return new DiscordActionResult(false, "discord_role_not_found", "Discord role or guild member was not found.");
+            return CreateFailure("discord_role_not_found", "backendMessages.discord.errors.roleNotFound");
         }
         catch (Exception ex) when (ex is HttpException or InvalidOperationException)
         {
@@ -120,7 +123,7 @@ public class DiscordService : IDiscordService
                 _guildId,
                 userId,
                 roleId);
-            return new DiscordActionResult(false, "discord_role_assignment_failed", "Discord role assignment failed.");
+            return CreateFailure("discord_role_assignment_failed", "backendMessages.discord.errors.roleAssignmentFailed");
         }
     }
 
@@ -217,9 +220,10 @@ public class DiscordService : IDiscordService
         CancellationToken cancellationToken = default) =>
         SendDmAsync(
             discordId,
-            $"Welkom op BracketHub, {username}!{Environment.NewLine}{Environment.NewLine}" +
-            "Je account is succesvol aangemaakt." + Environment.NewLine +
-            "Je kan nu deelnemen aan toernooien, coins verdienen en rewards inwisselen.",
+            _text.Get("discordMessages.welcome", new Dictionary<string, string?>
+            {
+                ["username"] = username
+            }),
             cancellationToken);
 
     public Task<bool> SendJoinRequestNotificationAsync(
@@ -230,11 +234,12 @@ public class DiscordService : IDiscordService
         CancellationToken cancellationToken = default) =>
         SendDmAsync(
             organizerDiscordId,
-            "Nieuwe deelnamerequest voor je toernooi" + Environment.NewLine + Environment.NewLine +
-            $"Team: {teamName}" + Environment.NewLine +
-            $"Kapitein: {captainName}" + Environment.NewLine + Environment.NewLine +
-            "Beheer de aanvraag hier:" + Environment.NewLine +
-            adminTeamsUrl,
+            _text.Get("discordMessages.joinRequestNotification", new Dictionary<string, string?>
+            {
+                ["teamName"] = teamName,
+                ["captainName"] = captainName,
+                ["adminTeamsUrl"] = adminTeamsUrl
+            }),
             cancellationToken);
 
     public Task<bool> SendJoinRequestResponseAsync(
@@ -246,13 +251,18 @@ public class DiscordService : IDiscordService
         CancellationToken cancellationToken = default)
     {
         var message = accepted
-            ? "Goed nieuws! ✅" + Environment.NewLine +
-              $"Je team is geaccepteerd voor het toernooi: {tournamentName}" + Environment.NewLine + Environment.NewLine +
-              $"Startdatum: {startDate:dd/MM/yyyy HH:mm}" + Environment.NewLine +
-              "Veel succes!"
-            : $"Je aanvraag voor het toernooi {tournamentName} is geweigerd. ❌" + Environment.NewLine + Environment.NewLine +
-              "Reden:" + Environment.NewLine +
-              (string.IsNullOrWhiteSpace(rejectionReason) ? "Geen reden opgegeven." : rejectionReason);
+            ? _text.Get("discordMessages.joinRequestAccepted", new Dictionary<string, string?>
+            {
+                ["tournamentName"] = tournamentName,
+                ["startDate"] = startDate.ToString("dd/MM/yyyy HH:mm")
+            })
+            : _text.Get("discordMessages.joinRequestRejected", new Dictionary<string, string?>
+            {
+                ["tournamentName"] = tournamentName,
+                ["reason"] = string.IsNullOrWhiteSpace(rejectionReason)
+                    ? _text.Get("discordMessages.joinRequestRejectedNoReason")
+                    : rejectionReason
+            });
 
         return SendDmAsync(userDiscordId, message, cancellationToken);
     }
@@ -264,11 +274,11 @@ public class DiscordService : IDiscordService
         CancellationToken cancellationToken = default) =>
         SendDmAsync(
             userDiscordId,
-            "Herinnering ⏰" + Environment.NewLine +
-            $"Je neemt deel aan {tournamentName}." + Environment.NewLine +
-            "Het toernooi start binnen 1 uur." + Environment.NewLine + Environment.NewLine +
-            "Bekijk het toernooi hier:" + Environment.NewLine +
-            tournamentUrl,
+            _text.Get("discordMessages.tournamentReminder", new Dictionary<string, string?>
+            {
+                ["tournamentName"] = tournamentName,
+                ["tournamentUrl"] = tournamentUrl
+            }),
             cancellationToken);
 
     public Task<bool> SendBetResultAsync(
@@ -279,14 +289,16 @@ public class DiscordService : IDiscordService
         CancellationToken cancellationToken = default)
     {
         var message = won
-            ? "Je hebt je pari gewonnen! 🎉" + Environment.NewLine + Environment.NewLine +
-              "Resultaat:" + Environment.NewLine +
-              $"{matchResult}" + Environment.NewLine + Environment.NewLine +
-              $"Je hebt {coinsAmount} coins gewonnen."
-            : "Je hebt je pari verloren. 😢" + Environment.NewLine + Environment.NewLine +
-              "Resultaat:" + Environment.NewLine +
-              $"{matchResult}" + Environment.NewLine + Environment.NewLine +
-              $"Je hebt {coinsAmount} coins verloren.";
+            ? _text.Get("discordMessages.betResultWon", new Dictionary<string, string?>
+            {
+                ["matchResult"] = matchResult,
+                ["coinsAmount"] = coinsAmount.ToString()
+            })
+            : _text.Get("discordMessages.betResultLost", new Dictionary<string, string?>
+            {
+                ["matchResult"] = matchResult,
+                ["coinsAmount"] = coinsAmount.ToString()
+            });
 
         return SendDmAsync(userDiscordId, message, cancellationToken);
     }
@@ -298,10 +310,11 @@ public class DiscordService : IDiscordService
         CancellationToken cancellationToken = default) =>
         SendDmAsync(
             userDiscordId,
-            "Je reward is klaar! 🎁" + Environment.NewLine + Environment.NewLine +
-            $"Reward: {rewardName}" + Environment.NewLine + Environment.NewLine +
-            "Hier is je code:" + Environment.NewLine +
-            rewardCode,
+            _text.Get("discordMessages.rewardDelivery", new Dictionary<string, string?>
+            {
+                ["rewardName"] = rewardName,
+                ["rewardCode"] = rewardCode
+            }),
             cancellationToken);
     
     private async Task<DiscordActionResult> SendPrivateMessageCoreAsync(
@@ -311,12 +324,12 @@ public class DiscordService : IDiscordService
     {
         if (userId == 0)
         {
-            return new DiscordActionResult(false, "discord_user_id_invalid", "Discord user id is invalid.");
+            return CreateFailure("discord_user_id_invalid", "backendMessages.discord.errors.userIdInvalid");
         }
 
         if (string.IsNullOrWhiteSpace(message))
         {
-            return new DiscordActionResult(false, "discord_message_empty", "Discord message content is required.");
+            return CreateFailure("discord_message_empty", "backendMessages.discord.errors.messageEmpty");
         }
 
         try
@@ -325,7 +338,7 @@ public class DiscordService : IDiscordService
             if (user is null)
             {
                 _logger.LogWarning("Discord user {UserId} does not exist or is unreachable.", userId);
-                return new DiscordActionResult(false, "discord_user_not_found", "Discord user does not exist or is unreachable.");
+                return CreateFailure("discord_user_not_found", "backendMessages.discord.errors.userNotFound");
             }
 
             var dmChannel = await user.CreateDMChannelAsync(new RequestOptions
@@ -343,7 +356,7 @@ public class DiscordService : IDiscordService
         catch (Exception ex) when (ex is HttpException or InvalidOperationException)
         {
             _logger.LogWarning(ex, "Discord DM send failed for Discord user {UserId}.", userId);
-            return new DiscordActionResult(false, "discord_dm_failed", "Discord direct message could not be delivered.");
+            return CreateFailure("discord_dm_failed", "backendMessages.discord.errors.dmFailed");
         }
     }
 
@@ -369,10 +382,7 @@ public class DiscordService : IDiscordService
             _logger.LogError(
                 "Discord guild {GuildId} was not found while assigning a role.",
                 _guildId);
-            return (null, new DiscordActionResult(
-                false,
-                "discord_bot_not_ready",
-                "Discord bot is not ready or is not connected to the configured guild."));
+            return (null, CreateFailure("discord_bot_not_ready", "backendMessages.discord.errors.botNotReady"));
         }
 
         var guildUser = guild.GetUser(userId);
@@ -389,13 +399,13 @@ public class DiscordService : IDiscordService
             });
 
             return restGuildUser is null
-                ? (null, new DiscordActionResult(false, "discord_user_not_in_guild", "Discord user is not in the configured guild."))
+                ? (null, CreateFailure("discord_user_not_in_guild", "backendMessages.discord.errors.userNotInGuild"))
                 : (restGuildUser, null);
         }
         catch (HttpException ex) when ((int)ex.HttpCode == 404)
         {
             _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
-            return (null, new DiscordActionResult(false, "discord_user_not_in_guild", "Discord user is not in the configured guild."));
+            return (null, CreateFailure("discord_user_not_in_guild", "backendMessages.discord.errors.userNotInGuild"));
         }
         catch (Exception ex) when (ex is HttpException or InvalidOperationException)
         {
@@ -404,7 +414,10 @@ public class DiscordService : IDiscordService
                 "Failed to resolve guild user. GuildId: {GuildId}, UserId: {UserId}",
                 _guildId,
                 userId);
-            return (null, new DiscordActionResult(false, "discord_user_lookup_failed", "Discord guild member lookup failed."));
+            return (null, CreateFailure("discord_user_lookup_failed", "backendMessages.discord.errors.userLookupFailed"));
         }
     }
+
+    private DiscordActionResult CreateFailure(string errorCode, string textKey) =>
+        new(false, errorCode, _text.Get(textKey));
 }
