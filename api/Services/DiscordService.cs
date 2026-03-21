@@ -27,42 +27,100 @@ public class DiscordService : IDiscordService
         string message,
         CancellationToken cancellationToken = default)
     {
-        if (userId == 0 || string.IsNullOrWhiteSpace(message))
+        var result = await SendPrivateMessageCoreAsync(userId, message, cancellationToken);
+        return result.Success;
+    }
+
+    public async Task<DiscordActionResult> SendDirectMessageAsync(
+        string discordUserId,
+        string message,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(discordUserId))
         {
-            return false;
+            return new DiscordActionResult(false, "discord_user_id_missing", "Discord user id is required.");
+        }
+
+        if (!ulong.TryParse(discordUserId, out var userId))
+        {
+            _logger.LogWarning("Discord ID '{DiscordId}' is invalid.", discordUserId);
+            return new DiscordActionResult(false, "discord_user_id_invalid", "Discord user id is invalid.");
+        }
+
+        return await SendPrivateMessageCoreAsync(userId, message, cancellationToken);
+    }
+
+    public async Task<DiscordActionResult> AddRoleToUserAsync(
+        string discordUserId,
+        string discordRoleId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(discordUserId))
+        {
+            return new DiscordActionResult(false, "discord_user_id_missing", "Discord user id is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(discordRoleId))
+        {
+            return new DiscordActionResult(false, "discord_role_id_missing", "Discord role id is required.");
+        }
+
+        if (!ulong.TryParse(discordUserId, out var userId))
+        {
+            _logger.LogWarning("Discord ID '{DiscordId}' is invalid.", discordUserId);
+            return new DiscordActionResult(false, "discord_user_id_invalid", "Discord user id is invalid.");
+        }
+
+        if (!ulong.TryParse(discordRoleId, out var roleId))
+        {
+            _logger.LogWarning("Discord role ID '{DiscordRoleId}' is invalid.", discordRoleId);
+            return new DiscordActionResult(false, "discord_role_id_invalid", "Discord role id is invalid.");
         }
 
         try
         {
-            IUser? user = _client.GetUser(userId);
-            if (user is null)
+            var guildUserResult = await ResolveGuildUserAsync(userId, cancellationToken);
+            if (guildUserResult.User is null)
             {
-                _logger.LogWarning("Discord user {UserId} was not found in cache. Falling back to REST.", userId);
-                user = await _client.Rest.GetUserAsync(userId);
+                return guildUserResult.Failure
+                    ?? new DiscordActionResult(false, "discord_user_not_in_guild", "Discord user is not in the configured guild.");
             }
 
-            if (user is null)
-            {
-                _logger.LogWarning("Discord user {UserId} does not exist or is unreachable.", userId);
-                return false;
-            }
-
-            var dmChannel = await user.CreateDMChannelAsync(new RequestOptions
+            await guildUserResult.User.AddRoleAsync(roleId, new RequestOptions
             {
                 CancelToken = cancellationToken
             });
 
-            await dmChannel.SendMessageAsync(message, options: new RequestOptions
-            {
-                CancelToken = cancellationToken
-            });
-
-            return true;
+            return new DiscordActionResult(true, null, null);
+        }
+        catch (HttpException ex) when ((int)ex.HttpCode == 403)
+        {
+            _logger.LogWarning(
+                ex,
+                "Discord role assignment forbidden. GuildId: {GuildId}, UserId: {UserId}",
+                _guildId,
+                userId);
+            return new DiscordActionResult(false, "discord_missing_permissions", "Discord bot is missing permission to assign this role.");
+        }
+        catch (HttpException ex) when ((int)ex.HttpCode == 404)
+        {
+            _logger.LogWarning(
+                ex,
+                "Discord role or guild member was not found. GuildId: {GuildId}, UserId: {UserId}, RoleId: {RoleId}",
+                _guildId,
+                userId,
+                roleId);
+            return new DiscordActionResult(false, "discord_role_not_found", "Discord role or guild member was not found.");
         }
         catch (Exception ex) when (ex is HttpException or InvalidOperationException)
         {
-            _logger.LogWarning(ex, "Discord DM send failed for Discord user {UserId}.", userId);
-            return false;
+            _logger.LogWarning(
+                ex,
+                "Failed to assign Discord role. GuildId: {GuildId}, UserId: {UserId}, RoleId: {RoleId}",
+                _guildId,
+                userId,
+                roleId);
+            return new DiscordActionResult(false, "discord_role_assignment_failed", "Discord role assignment failed.");
         }
     }
 
@@ -149,18 +207,8 @@ public class DiscordService : IDiscordService
         string message,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(discordId) || string.IsNullOrWhiteSpace(message))
-        {
-            return false;
-        }
-
-        if (!ulong.TryParse(discordId, out var userId))
-        {
-            _logger.LogWarning("Discord ID '{DiscordId}' is invalid.", discordId);
-            return false;
-        }
-
-        return await SendPrivateMessageAsync(userId, message, cancellationToken);
+        var result = await SendDirectMessageAsync(discordId, message, cancellationToken);
+        return result.Success;
     }
 
     public Task<bool> SendWelcomeMessageAsync(
@@ -255,5 +303,108 @@ public class DiscordService : IDiscordService
             "Hier is je code:" + Environment.NewLine +
             rewardCode,
             cancellationToken);
+    
+    private async Task<DiscordActionResult> SendPrivateMessageCoreAsync(
+        ulong userId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        if (userId == 0)
+        {
+            return new DiscordActionResult(false, "discord_user_id_invalid", "Discord user id is invalid.");
+        }
 
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return new DiscordActionResult(false, "discord_message_empty", "Discord message content is required.");
+        }
+
+        try
+        {
+            var user = await ResolveDiscordUserAsync(userId);
+            if (user is null)
+            {
+                _logger.LogWarning("Discord user {UserId} does not exist or is unreachable.", userId);
+                return new DiscordActionResult(false, "discord_user_not_found", "Discord user does not exist or is unreachable.");
+            }
+
+            var dmChannel = await user.CreateDMChannelAsync(new RequestOptions
+            {
+                CancelToken = cancellationToken
+            });
+
+            await dmChannel.SendMessageAsync(message, options: new RequestOptions
+            {
+                CancelToken = cancellationToken
+            });
+
+            return new DiscordActionResult(true, null, null);
+        }
+        catch (Exception ex) when (ex is HttpException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Discord DM send failed for Discord user {UserId}.", userId);
+            return new DiscordActionResult(false, "discord_dm_failed", "Discord direct message could not be delivered.");
+        }
+    }
+
+    private async Task<IUser?> ResolveDiscordUserAsync(ulong userId)
+    {
+        var user = _client.GetUser(userId);
+        if (user is not null)
+        {
+            return user;
+        }
+
+        _logger.LogWarning("Discord user {UserId} was not found in cache. Falling back to REST.", userId);
+        return await _client.Rest.GetUserAsync(userId);
+    }
+
+    private async Task<(IGuildUser? User, DiscordActionResult? Failure)> ResolveGuildUserAsync(
+        ulong userId,
+        CancellationToken cancellationToken)
+    {
+        var guild = _client.GetGuild(_guildId);
+        if (guild is null)
+        {
+            _logger.LogError(
+                "Discord guild {GuildId} was not found while assigning a role.",
+                _guildId);
+            return (null, new DiscordActionResult(
+                false,
+                "discord_bot_not_ready",
+                "Discord bot is not ready or is not connected to the configured guild."));
+        }
+
+        var guildUser = guild.GetUser(userId);
+        if (guildUser is not null)
+        {
+            return (guildUser, null);
+        }
+
+        try
+        {
+            var restGuildUser = await _client.Rest.GetGuildUserAsync(_guildId, userId, new RequestOptions
+            {
+                CancelToken = cancellationToken
+            });
+
+            return restGuildUser is null
+                ? (null, new DiscordActionResult(false, "discord_user_not_in_guild", "Discord user is not in the configured guild."))
+                : (restGuildUser, null);
+        }
+        catch (HttpException ex) when ((int)ex.HttpCode == 404)
+        {
+            _logger.LogInformation("User not in guild. GuildId: {GuildId}, UserId: {UserId}", _guildId, userId);
+            return (null, new DiscordActionResult(false, "discord_user_not_in_guild", "Discord user is not in the configured guild."));
+        }
+        catch (Exception ex) when (ex is HttpException or InvalidOperationException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to resolve guild user. GuildId: {GuildId}, UserId: {UserId}",
+                _guildId,
+                userId);
+            return (null, new DiscordActionResult(false, "discord_user_lookup_failed", "Discord guild member lookup failed."));
+        }
+    }
 }

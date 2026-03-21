@@ -12,6 +12,7 @@ var resolvedConfiguration = new Dictionary<string, string?>
     ["Supabase:ServiceKey"] = GetConfigValue(builder.Configuration, "Supabase:ServiceKey", "SUPABASE_SERVICE_KEY"),
     ["Supabase:PublishableKey"] = GetConfigValue(builder.Configuration, "Supabase:PublishableKey", "SUPABASE_PUBLISHABLE_KEY"),
     ["Supabase:JwtSecret"] = GetConfigValue(builder.Configuration, "Supabase:JwtSecret", "SUPABASE_JWT_SECRET"),
+    ["Supabase:DatabaseConnectionString"] = GetOptionalConfigValue(builder.Configuration, "Supabase:DatabaseConnectionString", "SUPABASE_DB_CONNECTION_STRING"),
     ["IGDB:ClientId"] = GetConfigValue(builder.Configuration, "IGDB:ClientId", "IGDB_CLIENT_ID"),
     ["IGDB:ClientSecret"] = GetConfigValue(builder.Configuration, "IGDB:ClientSecret", "IGDB_CLIENT_SECRET"),
     ["Discord:BotToken"] = GetConfigValue(builder.Configuration, "Discord:BotToken", "DISCORD_BOT_TOKEN"),
@@ -45,6 +46,7 @@ builder.Services.AddScoped<DailyRewardService>();
 builder.Services.AddScoped<BettingService>();
 builder.Services.AddScoped<TeamRequestService>();
 builder.Services.AddScoped<TournamentStageService>();
+builder.Services.AddScoped<RewardService>();
 builder.Services.AddSingleton<IDiscordService, DiscordService>();
 builder.Services.AddHostedService<DiscordBotHostedService>();
 builder.Services.AddHostedService<TournamentReminderBackgroundService>();
@@ -88,4 +90,19 @@ static string GetConfigValue(
 
     throw new InvalidOperationException(
         $"Missing required configuration value '{configKey}' (fallback environment variable '{environmentVariableName}').");
+}
+
+static string? GetOptionalConfigValue(
+    IConfiguration configuration,
+    string configKey,
+    string environmentVariableName)
+{
+    var value = Environment.GetEnvironmentVariable(environmentVariableName);
+    if (!string.IsNullOrWhiteSpace(value))
+    {
+        return value;
+    }
+
+    value = configuration[configKey];
+    return string.IsNullOrWhiteSpace(value) ? null : value;
 }
