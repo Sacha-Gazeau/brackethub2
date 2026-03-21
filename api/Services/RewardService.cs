@@ -50,6 +50,7 @@ public enum RewardPurchaseStatus
     AlreadyPurchased,
     DiscordRoleNotConfigured,
     DatabaseConfigurationMissing,
+    DatabaseConnectionFailed,
     DiscordDmFailed,
     DiscordRoleAssignmentFailed,
     CompensationFailed
@@ -174,79 +175,93 @@ public class RewardService
             return new RewardPurchaseResult
             {
                 Status = RewardPurchaseStatus.DatabaseConfigurationMissing,
-                RewardId = rewardId
+                RewardId = rewardId,
+                FailureDetail = "Configureer SUPABASE_DB_CONNECTION_STRING, DATABASE_URL of een Azure App Service connection string met naam 'SupabaseDb'."
             };
         }
 
-        await using var connection = new NpgsqlConnection(_databaseConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        var profile = await GetProfileForUpdateAsync(connection, transaction, userId, cancellationToken);
-        if (profile is null)
+        try
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await using var connection = new NpgsqlConnection(_databaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+            var profile = await GetProfileForUpdateAsync(connection, transaction, userId, cancellationToken);
+            if (profile is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new RewardPurchaseResult
+                {
+                    Status = RewardPurchaseStatus.ProfileNotFound,
+                    RewardId = rewardId
+                };
+            }
+
+            var reward = await GetRewardRowAsync(connection, transaction, rewardId, cancellationToken);
+            if (reward is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new RewardPurchaseResult
+                {
+                    Status = RewardPurchaseStatus.RewardNotFound,
+                    RewardId = rewardId
+                };
+            }
+
+            if (!reward.IsActive)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return BuildFailedPurchaseResult(
+                    RewardPurchaseStatus.RewardInactive,
+                    reward,
+                    profile.Coins);
+            }
+
+            if (string.IsNullOrWhiteSpace(profile.DiscordId))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return BuildFailedPurchaseResult(
+                    RewardPurchaseStatus.DiscordAccountRequired,
+                    reward,
+                    profile.Coins);
+            }
+
+            if (profile.Coins < reward.PriceCoins)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return BuildFailedPurchaseResult(
+                    RewardPurchaseStatus.InsufficientCoins,
+                    reward,
+                    profile.Coins);
+            }
+
+            return reward.Type switch
+            {
+                RewardTypes.SubscriptionCode => await PurchaseSubscriptionCodeAsync(
+                    connection,
+                    transaction,
+                    profile,
+                    reward,
+                    cancellationToken),
+                RewardTypes.DiscordRole => await PurchaseDiscordRoleAsync(
+                    connection,
+                    transaction,
+                    profile,
+                    reward,
+                    cancellationToken),
+                _ => await RollbackUnsupportedRewardAsync(transaction, reward, profile.Coins, cancellationToken)
+            };
+        }
+        catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException or ArgumentException)
+        {
+            _logger.LogError(ex, "Rewards database connection failed for reward {RewardId}.", rewardId);
             return new RewardPurchaseResult
             {
-                Status = RewardPurchaseStatus.ProfileNotFound,
-                RewardId = rewardId
+                Status = RewardPurchaseStatus.DatabaseConnectionFailed,
+                RewardId = rewardId,
+                FailureDetail = ex.Message
             };
         }
-
-        var reward = await GetRewardRowAsync(connection, transaction, rewardId, cancellationToken);
-        if (reward is null)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return new RewardPurchaseResult
-            {
-                Status = RewardPurchaseStatus.RewardNotFound,
-                RewardId = rewardId
-            };
-        }
-
-        if (!reward.IsActive)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return BuildFailedPurchaseResult(
-                RewardPurchaseStatus.RewardInactive,
-                reward,
-                profile.Coins);
-        }
-
-        if (string.IsNullOrWhiteSpace(profile.DiscordId))
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return BuildFailedPurchaseResult(
-                RewardPurchaseStatus.DiscordAccountRequired,
-                reward,
-                profile.Coins);
-        }
-
-        if (profile.Coins < reward.PriceCoins)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return BuildFailedPurchaseResult(
-                RewardPurchaseStatus.InsufficientCoins,
-                reward,
-                profile.Coins);
-        }
-
-        return reward.Type switch
-        {
-            RewardTypes.SubscriptionCode => await PurchaseSubscriptionCodeAsync(
-                connection,
-                transaction,
-                profile,
-                reward,
-                cancellationToken),
-            RewardTypes.DiscordRole => await PurchaseDiscordRoleAsync(
-                connection,
-                transaction,
-                profile,
-                reward,
-                cancellationToken),
-            _ => await RollbackUnsupportedRewardAsync(transaction, reward, profile.Coins, cancellationToken)
-        };
     }
 
     private static int GetTypeSortOrder(Reward reward) => reward.Type switch
