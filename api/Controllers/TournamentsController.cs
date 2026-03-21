@@ -154,14 +154,6 @@ public class TournamentsController : ControllerBase
                 });
             }
 
-            if (!string.Equals(GetEffectiveTournamentStatus(tournament), "aankomend", StringComparison.OrdinalIgnoreCase))
-            {
-                return BadRequest(new
-                {
-                    message = "Only upcoming tournaments can be deleted."
-                });
-            }
-
             await DeleteTournamentRelationsAsync(tournament.Id, cancellationToken);
 
             await _supabase
@@ -368,32 +360,6 @@ public class TournamentsController : ControllerBase
             .Select(team => team.Id)
             .Where(id => id > 0)
             .ToList();
-    }
-
-    private static string GetEffectiveTournamentStatus(TournamentInsert tournament)
-    {
-        if (string.Equals(tournament.Status, "finished", StringComparison.OrdinalIgnoreCase))
-        {
-            return "finished";
-        }
-
-        var now = DateTime.UtcNow;
-        if (tournament.EndDate != default && now > tournament.EndDate.ToUniversalTime())
-        {
-            return "finished";
-        }
-
-        if (string.Equals(tournament.Status, "live", StringComparison.OrdinalIgnoreCase))
-        {
-            return "live";
-        }
-
-        if (tournament.StartDate != default && now >= tournament.StartDate.ToUniversalTime())
-        {
-            return "live";
-        }
-
-        return "aankomend";
     }
 
     private static object MapTournamentResponse(TournamentInsert tournament)
